@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 
 type RecordType = "activo" | "pasivo" | "ingreso" | "gasto"
-type Currency = "USD" | "EUR" | "MXN"
+type Currency = "USD" | "EUR" | "MXN" | "ARS" | "USDT"
 
 interface FinancialRecord {
   id: string
@@ -37,6 +37,8 @@ const currencySymbols: Record<Currency, string> = {
   USD: "$",
   EUR: "€",
   MXN: "$",
+  ARS: "$",
+  USDT: "₮",
 }
 
 export default function Home() {
@@ -54,6 +56,29 @@ export default function Home() {
   const pasivos = records.filter((r) => r.type === "pasivo")
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
+
+  // Calculate balance per currency
+  const calculateBalance = () => {
+    const balanceByCurrency: Record<Currency, number> = {
+      USD: 0,
+      EUR: 0,
+      MXN: 0,
+      ARS: 0,
+      USDT: 0,
+    }
+
+    ingresos.forEach((ingreso) => {
+      balanceByCurrency[ingreso.currency] += ingreso.amount
+    })
+
+    gastos.forEach((gasto) => {
+      balanceByCurrency[gasto.currency] -= gasto.amount
+    })
+
+    return balanceByCurrency
+  }
+
+  const balance = calculateBalance()
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -171,6 +196,8 @@ export default function Home() {
                       <SelectItem value="USD">USD - Dólar</SelectItem>
                       <SelectItem value="EUR">EUR - Euro</SelectItem>
                       <SelectItem value="MXN">MXN - Peso Mexicano</SelectItem>
+                      <SelectItem value="ARS">ARS - Peso Argentino</SelectItem>
+                      <SelectItem value="USDT">USDT - Tether</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -364,6 +391,57 @@ export default function Home() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Balance */}
+        <Card className="mt-6 border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/20">
+          <CardHeader>
+            <CardTitle className="text-slate-700 dark:text-slate-300">
+              Balance (Ingresos - Gastos)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
+              {(Object.keys(balance) as Currency[]).map((currency) => {
+                const value = balance[currency]
+                const hasActivity =
+                  ingresos.some((i) => i.currency === currency) ||
+                  gastos.some((g) => g.currency === currency)
+
+                if (!hasActivity) return null
+
+                return (
+                  <div
+                    key={currency}
+                    className="flex flex-col items-center rounded-lg bg-background p-4 shadow-sm"
+                  >
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {currency}
+                    </span>
+                    <span
+                      className={`text-xl font-bold ${
+                        value >= 0
+                          ? "text-emerald-600 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400"
+                      }`}
+                    >
+                      {value >= 0 ? "+" : ""}
+                      {currencySymbols[currency]}
+                      {Math.abs(value).toLocaleString("en-US", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                )
+              })}
+              {!ingresos.length && !gastos.length && (
+                <p className="col-span-full text-sm text-muted-foreground">
+                  No hay ingresos ni gastos registrados
+                </p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )
