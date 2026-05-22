@@ -3,7 +3,6 @@
 import { useState } from "react"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -57,28 +56,34 @@ export default function Home() {
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
 
-  // Calculate balance per currency
-  const calculateBalance = () => {
-    const balanceByCurrency: Record<Currency, number> = {
+  // Calculate totals per currency
+  const calculateTotals = (items: FinancialRecord[]) => {
+    const totals: Record<Currency, number> = {
       USD: 0,
       EUR: 0,
       MXN: 0,
       ARS: 0,
       USDT: 0,
     }
-
-    ingresos.forEach((ingreso) => {
-      balanceByCurrency[ingreso.currency] += ingreso.amount
+    items.forEach((item) => {
+      totals[item.currency] += item.amount
     })
-
-    gastos.forEach((gasto) => {
-      balanceByCurrency[gasto.currency] -= gasto.amount
-    })
-
-    return balanceByCurrency
+    return totals
   }
 
-  const balance = calculateBalance()
+  const totalIngresos = calculateTotals(ingresos)
+  const totalGastos = calculateTotals(gastos)
+  const totalActivos = calculateTotals(activos)
+  const totalPasivos = calculateTotals(pasivos)
+
+  // Calculate Flujo de Caja Mensual (Ingresos - Gastos)
+  const flujoCaja: Record<Currency, number> = {
+    USD: totalIngresos.USD - totalGastos.USD,
+    EUR: totalIngresos.EUR - totalGastos.EUR,
+    MXN: totalIngresos.MXN - totalGastos.MXN,
+    ARS: totalIngresos.ARS - totalGastos.ARS,
+    USDT: totalIngresos.USDT - totalGastos.USDT,
+  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -108,7 +113,7 @@ export default function Home() {
     return `${currencySymbols[currency]}${amount.toLocaleString("en-US", {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
-    })} ${currency}`
+    })}`
   }
 
   const getLinkedName = (linkedId: string) => {
@@ -116,16 +121,49 @@ export default function Home() {
     return linked?.name || ""
   }
 
+  const formatTotals = (totals: Record<Currency, number>) => {
+    const activeCurrencies = (Object.keys(totals) as Currency[]).filter(
+      (c) => totals[c] !== 0
+    )
+    if (activeCurrencies.length === 0) return "—"
+    return activeCurrencies
+      .map((c) => `${formatAmount(totals[c], c)} ${c}`)
+      .join(" | ")
+  }
+
+  const formatFlujoCaja = () => {
+    const activeCurrencies = (Object.keys(flujoCaja) as Currency[]).filter(
+      (c) => totalIngresos[c] !== 0 || totalGastos[c] !== 0
+    )
+    if (activeCurrencies.length === 0) return "—"
+    return activeCurrencies.map((c) => {
+      const value = flujoCaja[c]
+      const sign = value >= 0 ? "+" : ""
+      return (
+        <span
+          key={c}
+          className={value >= 0 ? "text-emerald-700" : "text-rose-700"}
+        >
+          {sign}
+          {formatAmount(value, c)} {c}
+        </span>
+      )
+    })
+  }
+
   return (
-    <div className="min-h-screen bg-background p-6">
-      <div className="mx-auto max-w-6xl">
-        <div className="mb-6 flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-foreground">
-            Cash Flow Dashboard
-          </h1>
+    <div className="min-h-screen bg-white p-4 font-sans text-black">
+      <div className="mx-auto max-w-5xl">
+        {/* Header */}
+        <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-2">
+          <div className="flex items-center gap-4">
+            <div className="bg-black px-4 py-1 text-white">
+              <span className="font-bold">Cash Flow Dashboard</span>
+            </div>
+          </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button>
+              <Button variant="outline" className="border-2 border-black">
                 <Plus className="mr-2 h-4 w-4" />
                 Crear Registro
               </Button>
@@ -193,7 +231,7 @@ export default function Home() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="USD">USD - Dólar</SelectItem>
+                      <SelectItem value="USD">USD - Dolar</SelectItem>
                       <SelectItem value="EUR">EUR - Euro</SelectItem>
                       <SelectItem value="MXN">MXN - Peso Mexicano</SelectItem>
                       <SelectItem value="ARS">ARS - Peso Argentino</SelectItem>
@@ -256,192 +294,206 @@ export default function Home() {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          {/* Activos */}
-          <Card className="border-emerald-200 bg-emerald-50/50 dark:border-emerald-900 dark:bg-emerald-950/20">
-            <CardHeader>
-              <CardTitle className="text-emerald-700 dark:text-emerald-400">
-                Activos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {activos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No hay activos registrados
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {activos.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between rounded-lg bg-background p-3 shadow-sm"
-                    >
-                      <span className="font-medium">{record.name}</span>
-                      <span className="text-emerald-600 dark:text-emerald-400">
-                        {formatAmount(record.amount, record.currency)}
-                      </span>
-                    </div>
-                  ))}
+        {/* Estado de Resultados */}
+        <div className="mb-6">
+          <h2 className="mb-2 text-center text-xl font-bold italic">
+            Estado de Resultados
+          </h2>
+          <div className="flex gap-4">
+            {/* Left Side - Ingresos y Gastos */}
+            <div className="flex-1">
+              {/* Ingresos */}
+              <div className="border-2 border-black">
+                <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
+                  Ingresos
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Pasivos */}
-          <Card className="border-rose-200 bg-rose-50/50 dark:border-rose-900 dark:bg-rose-950/20">
-            <CardHeader>
-              <CardTitle className="text-rose-700 dark:text-rose-400">
-                Pasivos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {pasivos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No hay pasivos registrados
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {pasivos.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex items-center justify-between rounded-lg bg-background p-3 shadow-sm"
-                    >
-                      <span className="font-medium">{record.name}</span>
-                      <span className="text-rose-600 dark:text-rose-400">
-                        {formatAmount(record.amount, record.currency)}
-                      </span>
-                    </div>
-                  ))}
+                <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
+                  <div className="flex-1 border-r border-black px-2 py-1">
+                    Descripcion
+                  </div>
+                  <div className="w-32 px-2 py-1 text-right">Flujo de Caja</div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Ingresos */}
-          <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
-            <CardHeader>
-              <CardTitle className="text-blue-700 dark:text-blue-400">
-                Ingresos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {ingresos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No hay ingresos registrados
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {ingresos.map((record) => (
+                {ingresos.length === 0 ? (
+                  <div className="flex border-b border-black text-sm">
+                    <div className="flex-1 border-r border-black px-2 py-1 text-gray-400">
+                      Sin ingresos
+                    </div>
+                    <div className="w-32 px-2 py-1 text-right">—</div>
+                  </div>
+                ) : (
+                  ingresos.map((record) => (
                     <div
                       key={record.id}
-                      className="flex flex-col rounded-lg bg-background p-3 shadow-sm"
+                      className="flex border-b border-black text-sm"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{record.name}</span>
-                        <span className="text-blue-600 dark:text-blue-400">
-                          {formatAmount(record.amount, record.currency)}
-                        </span>
+                      <div className="flex-1 border-r border-black px-2 py-1">
+                        {record.name}
+                        {record.linkedTo && (
+                          <span className="ml-1 text-xs text-gray-500">
+                            ({getLinkedName(record.linkedTo)})
+                          </span>
+                        )}
                       </div>
-                      {record.linkedTo && (
-                        <span className="mt-1 text-xs text-muted-foreground">
-                          Asignado a: {getLinkedName(record.linkedTo)}
-                        </span>
-                      )}
+                      <div className="w-32 px-2 py-1 text-right">
+                        {formatAmount(record.amount, record.currency)}{" "}
+                        {record.currency}
+                      </div>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                  ))
+                )}
+              </div>
 
-          {/* Gastos */}
-          <Card className="border-amber-200 bg-amber-50/50 dark:border-amber-900 dark:bg-amber-950/20">
-            <CardHeader>
-              <CardTitle className="text-amber-700 dark:text-amber-400">
-                Gastos
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {gastos.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No hay gastos registrados
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {gastos.map((record) => (
+              {/* Gastos */}
+              <div className="mt-4 border-2 border-black">
+                <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
+                  Gastos
+                </div>
+                {gastos.length === 0 ? (
+                  <div className="flex border-b border-black text-sm">
+                    <div className="flex-1 border-r border-black px-2 py-1 text-gray-400">
+                      Sin gastos
+                    </div>
+                    <div className="w-32 px-2 py-1 text-right">—</div>
+                  </div>
+                ) : (
+                  gastos.map((record) => (
                     <div
                       key={record.id}
-                      className="flex flex-col rounded-lg bg-background p-3 shadow-sm"
+                      className="flex border-b border-black text-sm"
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-medium">{record.name}</span>
-                        <span className="text-amber-600 dark:text-amber-400">
-                          {formatAmount(record.amount, record.currency)}
-                        </span>
+                      <div className="flex-1 border-r border-black px-2 py-1">
+                        {record.name}
+                        {record.linkedTo && (
+                          <span className="ml-1 text-xs text-gray-500">
+                            ({getLinkedName(record.linkedTo)})
+                          </span>
+                        )}
                       </div>
-                      {record.linkedTo && (
-                        <span className="mt-1 text-xs text-muted-foreground">
-                          Asignado a: {getLinkedName(record.linkedTo)}
-                        </span>
-                      )}
+                      <div className="w-32 px-2 py-1 text-right">
+                        {formatAmount(record.amount, record.currency)}{" "}
+                        {record.currency}
+                      </div>
                     </div>
-                  ))}
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Right Side - Auditor */}
+            <div className="w-72 border-2 border-black">
+              <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
+                Auditor
+              </div>
+              <div className="space-y-4 p-3">
+                <div>
+                  <div className="text-sm font-bold">Total Ingresos:</div>
+                  <div className="border-b border-black text-sm">
+                    {formatTotals(totalIngresos)}
+                  </div>
                 </div>
-              )}
-            </CardContent>
-          </Card>
+                <div>
+                  <div className="text-sm font-bold">Total Gastos:</div>
+                  <div className="border-b border-black text-sm">
+                    {formatTotals(totalGastos)}
+                  </div>
+                </div>
+                <div className="border-t-2 border-black pt-3">
+                  <div className="text-sm font-bold">Flujo de Caja Mensual:</div>
+                  <div className="border-b-2 border-black text-sm font-bold">
+                    <div className="flex flex-wrap gap-2">
+                      {formatFlujoCaja()}
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500">
+                    (Ingresos - Gastos)
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Balance */}
-        <Card className="mt-6 border-slate-200 bg-slate-50/50 dark:border-slate-800 dark:bg-slate-950/20">
-          <CardHeader>
-            <CardTitle className="text-slate-700 dark:text-slate-300">
-              Balance (Ingresos - Gastos)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
-              {(Object.keys(balance) as Currency[]).map((currency) => {
-                const value = balance[currency]
-                const hasActivity =
-                  ingresos.some((i) => i.currency === currency) ||
-                  gastos.some((g) => g.currency === currency)
-
-                if (!hasActivity) return null
-
-                return (
-                  <div
-                    key={currency}
-                    className="flex flex-col items-center rounded-lg bg-background p-4 shadow-sm"
-                  >
-                    <span className="text-sm font-medium text-muted-foreground">
-                      {currency}
-                    </span>
-                    <span
-                      className={`text-xl font-bold ${
-                        value >= 0
-                          ? "text-emerald-600 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400"
-                      }`}
-                    >
-                      {value >= 0 ? "+" : ""}
-                      {currencySymbols[currency]}
-                      {Math.abs(value).toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      })}
-                    </span>
+        {/* BALANCE */}
+        <div>
+          <h2 className="mb-2 text-center text-xl font-bold">BALANCE</h2>
+          <div className="flex">
+            {/* Activos */}
+            <div className="flex-1 border-2 border-black">
+              <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
+                Activos
+              </div>
+              {activos.length === 0 ? (
+                <div className="flex border-b border-black text-sm">
+                  <div className="flex-1 px-2 py-1 text-gray-400">
+                    Sin activos
                   </div>
-                )
-              })}
-              {!ingresos.length && !gastos.length && (
-                <p className="col-span-full text-sm text-muted-foreground">
-                  No hay ingresos ni gastos registrados
-                </p>
+                  <div className="w-32 px-2 py-1 text-right">—</div>
+                </div>
+              ) : (
+                activos.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex border-b border-black text-sm"
+                  >
+                    <div className="flex-1 border-r border-black px-2 py-1">
+                      {record.name}
+                    </div>
+                    <div className="w-32 px-2 py-1 text-right">
+                      {formatAmount(record.amount, record.currency)}{" "}
+                      {record.currency}
+                    </div>
+                  </div>
+                ))
               )}
+              <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
+                <div className="flex-1 border-r border-black px-2 py-1">
+                  Total Activos:
+                </div>
+                <div className="w-32 px-2 py-1 text-right">
+                  {formatTotals(totalActivos)}
+                </div>
+              </div>
             </div>
-          </CardContent>
-        </Card>
+
+            {/* Obligaciones (Pasivos) */}
+            <div className="flex-1 border-2 border-l-0 border-black">
+              <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
+                Obligaciones
+              </div>
+              {pasivos.length === 0 ? (
+                <div className="flex border-b border-black text-sm">
+                  <div className="flex-1 px-2 py-1 text-gray-400">
+                    Sin obligaciones
+                  </div>
+                  <div className="w-32 px-2 py-1 text-right">—</div>
+                </div>
+              ) : (
+                pasivos.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex border-b border-black text-sm"
+                  >
+                    <div className="flex-1 border-r border-black px-2 py-1">
+                      {record.name}
+                    </div>
+                    <div className="w-32 px-2 py-1 text-right">
+                      {formatAmount(record.amount, record.currency)}{" "}
+                      {record.currency}
+                    </div>
+                  </div>
+                ))
+              )}
+              <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
+                <div className="flex-1 border-r border-black px-2 py-1">
+                  Total Obligaciones:
+                </div>
+                <div className="w-32 px-2 py-1 text-right">
+                  {formatTotals(totalPasivos)}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
