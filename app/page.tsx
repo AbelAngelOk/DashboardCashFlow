@@ -3,15 +3,7 @@
 import { useState } from "react"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -40,15 +32,33 @@ const currencySymbols: Record<Currency, string> = {
   USDT: "₮",
 }
 
+const defaultCurrency: Currency = "USD"
+
 export default function Home() {
   const [records, setRecords] = useState<FinancialRecord[]>([])
-  const [isDialogOpen, setIsDialogOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    type: "" as RecordType | "",
+
+  // Form states for each section
+  const [ingresoForm, setIngresoForm] = useState({
     name: "",
     amount: "",
-    currency: "USD" as Currency,
+    currency: defaultCurrency,
     linkedTo: "",
+  })
+  const [gastoForm, setGastoForm] = useState({
+    name: "",
+    amount: "",
+    currency: defaultCurrency,
+    linkedTo: "",
+  })
+  const [activoForm, setActivoForm] = useState({
+    name: "",
+    amount: "",
+    currency: defaultCurrency,
+  })
+  const [pasivoForm, setPasivoForm] = useState({
+    name: "",
+    amount: "",
+    currency: defaultCurrency,
   })
 
   const activos = records.filter((r) => r.type === "activo")
@@ -85,28 +95,44 @@ export default function Home() {
     USDT: totalIngresos.USDT - totalGastos.USDT,
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!formData.type || !formData.name || !formData.amount) return
+  const addRecord = (type: RecordType, name: string, amount: string, currency: Currency, linkedTo?: string) => {
+    if (!name || !amount) return false
 
     const newRecord: FinancialRecord = {
       id: crypto.randomUUID(),
-      type: formData.type as RecordType,
-      name: formData.name,
-      amount: parseFloat(formData.amount),
-      currency: formData.currency,
-      linkedTo: formData.linkedTo || undefined,
+      type,
+      name,
+      amount: parseFloat(amount),
+      currency,
+      linkedTo: linkedTo || undefined,
     }
 
     setRecords([...records, newRecord])
-    setFormData({
-      type: "",
-      name: "",
-      amount: "",
-      currency: "USD",
-      linkedTo: "",
-    })
-    setIsDialogOpen(false)
+    return true
+  }
+
+  const handleAddIngreso = () => {
+    if (addRecord("ingreso", ingresoForm.name, ingresoForm.amount, ingresoForm.currency, ingresoForm.linkedTo)) {
+      setIngresoForm({ name: "", amount: "", currency: defaultCurrency, linkedTo: "" })
+    }
+  }
+
+  const handleAddGasto = () => {
+    if (addRecord("gasto", gastoForm.name, gastoForm.amount, gastoForm.currency, gastoForm.linkedTo)) {
+      setGastoForm({ name: "", amount: "", currency: defaultCurrency, linkedTo: "" })
+    }
+  }
+
+  const handleAddActivo = () => {
+    if (addRecord("activo", activoForm.name, activoForm.amount, activoForm.currency)) {
+      setActivoForm({ name: "", amount: "", currency: defaultCurrency })
+    }
+  }
+
+  const handleAddPasivo = () => {
+    if (addRecord("pasivo", pasivoForm.name, pasivoForm.amount, pasivoForm.currency)) {
+      setPasivoForm({ name: "", amount: "", currency: defaultCurrency })
+    }
   }
 
   const formatAmount = (amount: number, currency: Currency) => {
@@ -151,147 +177,35 @@ export default function Home() {
     })
   }
 
+  const CurrencySelect = ({
+    value,
+    onChange,
+  }: {
+    value: Currency
+    onChange: (value: Currency) => void
+  }) => (
+    <Select value={value} onValueChange={onChange}>
+      <SelectTrigger className="h-7 w-20 border-black text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="USD">USD</SelectItem>
+        <SelectItem value="EUR">EUR</SelectItem>
+        <SelectItem value="MXN">MXN</SelectItem>
+        <SelectItem value="ARS">ARS</SelectItem>
+        <SelectItem value="USDT">USDT</SelectItem>
+      </SelectContent>
+    </Select>
+  )
+
   return (
     <div className="min-h-screen bg-white p-4 font-sans text-black">
       <div className="mx-auto max-w-5xl">
         {/* Header */}
-        <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-2">
-          <div className="flex items-center gap-4">
-            <div className="bg-black px-4 py-1 text-white">
-              <span className="font-bold">Cash Flow Dashboard</span>
-            </div>
+        <div className="mb-4 border-b-2 border-black pb-2">
+          <div className="bg-black px-4 py-1 text-white inline-block">
+            <span className="font-bold">Cash Flow Dashboard</span>
           </div>
-          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline" className="border-2 border-black">
-                <Plus className="mr-2 h-4 w-4" />
-                Crear Registro
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-md">
-              <DialogHeader>
-                <DialogTitle>Nuevo Registro</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label htmlFor="type">Tipo</Label>
-                  <Select
-                    value={formData.type}
-                    onValueChange={(value: RecordType) =>
-                      setFormData({ ...formData, type: value, linkedTo: "" })
-                    }
-                  >
-                    <SelectTrigger id="type">
-                      <SelectValue placeholder="Seleccionar tipo" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="activo">Activo</SelectItem>
-                      <SelectItem value="pasivo">Pasivo</SelectItem>
-                      <SelectItem value="ingreso">Ingreso</SelectItem>
-                      <SelectItem value="gasto">Gasto</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="name">Nombre</Label>
-                  <Input
-                    id="name"
-                    value={formData.name}
-                    onChange={(e) =>
-                      setFormData({ ...formData, name: e.target.value })
-                    }
-                    placeholder="Nombre del registro"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="amount">Monto</Label>
-                  <Input
-                    id="amount"
-                    type="number"
-                    step="0.01"
-                    value={formData.amount}
-                    onChange={(e) =>
-                      setFormData({ ...formData, amount: e.target.value })
-                    }
-                    placeholder="0.00"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="currency">Moneda</Label>
-                  <Select
-                    value={formData.currency}
-                    onValueChange={(value: Currency) =>
-                      setFormData({ ...formData, currency: value })
-                    }
-                  >
-                    <SelectTrigger id="currency">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="USD">USD - Dolar</SelectItem>
-                      <SelectItem value="EUR">EUR - Euro</SelectItem>
-                      <SelectItem value="MXN">MXN - Peso Mexicano</SelectItem>
-                      <SelectItem value="ARS">ARS - Peso Argentino</SelectItem>
-                      <SelectItem value="USDT">USDT - Tether</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {formData.type === "ingreso" && activos.length > 0 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="linkedActivo">Asignar a Activo</Label>
-                    <Select
-                      value={formData.linkedTo}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, linkedTo: value })
-                      }
-                    >
-                      <SelectTrigger id="linkedActivo">
-                        <SelectValue placeholder="Seleccionar activo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {activos.map((activo) => (
-                          <SelectItem key={activo.id} value={activo.id}>
-                            {activo.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                {formData.type === "gasto" && pasivos.length > 0 && (
-                  <div className="space-y-2">
-                    <Label htmlFor="linkedPasivo">Asignar a Pasivo</Label>
-                    <Select
-                      value={formData.linkedTo}
-                      onValueChange={(value) =>
-                        setFormData({ ...formData, linkedTo: value })
-                      }
-                    >
-                      <SelectTrigger id="linkedPasivo">
-                        <SelectValue placeholder="Seleccionar pasivo" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {pasivos.map((pasivo) => (
-                          <SelectItem key={pasivo.id} value={pasivo.id}>
-                            {pasivo.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
-
-                <Button type="submit" className="w-full">
-                  Crear
-                </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
         </div>
 
         {/* Estado de Resultados */}
@@ -311,36 +225,80 @@ export default function Home() {
                   <div className="flex-1 border-r border-black px-2 py-1">
                     Descripcion
                   </div>
-                  <div className="w-32 px-2 py-1 text-right">Flujo de Caja</div>
+                  <div className="w-32 border-r border-black px-2 py-1 text-right">Flujo de Caja</div>
+                  <div className="w-24 px-2 py-1 text-center">Activo</div>
                 </div>
-                {ingresos.length === 0 ? (
-                  <div className="flex border-b border-black text-sm">
-                    <div className="flex-1 border-r border-black px-2 py-1 text-gray-400">
-                      Sin ingresos
+                {ingresos.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex border-b border-black text-sm"
+                  >
+                    <div className="flex-1 border-r border-black px-2 py-1">
+                      {record.name}
                     </div>
-                    <div className="w-32 px-2 py-1 text-right">—</div>
+                    <div className="w-32 border-r border-black px-2 py-1 text-right">
+                      {formatAmount(record.amount, record.currency)}{" "}
+                      {record.currency}
+                    </div>
+                    <div className="w-24 px-2 py-1 text-center text-xs text-gray-500">
+                      {record.linkedTo ? getLinkedName(record.linkedTo) : "—"}
+                    </div>
                   </div>
-                ) : (
-                  ingresos.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex border-b border-black text-sm"
+                ))}
+                {/* Input row for new ingreso */}
+                <div className="flex border-b border-black bg-gray-50 text-sm">
+                  <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
+                    <Input
+                      placeholder="Nuevo ingreso..."
+                      value={ingresoForm.name}
+                      onChange={(e) => setIngresoForm({ ...ingresoForm, name: e.target.value })}
+                      className="h-7 border-black text-xs"
+                    />
+                  </div>
+                  <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-1">
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={ingresoForm.amount}
+                      onChange={(e) => setIngresoForm({ ...ingresoForm, amount: e.target.value })}
+                      className="h-7 w-16 border-black text-xs"
+                    />
+                    <CurrencySelect
+                      value={ingresoForm.currency}
+                      onChange={(v) => setIngresoForm({ ...ingresoForm, currency: v })}
+                    />
+                  </div>
+                  <div className="flex w-24 items-center gap-1 px-1 py-1">
+                    {activos.length > 0 ? (
+                      <Select
+                        value={ingresoForm.linkedTo}
+                        onValueChange={(v) => setIngresoForm({ ...ingresoForm, linkedTo: v })}
+                      >
+                        <SelectTrigger className="h-7 w-full border-black text-xs">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          {activos.map((a) => (
+                            <SelectItem key={a.id} value={a.id}>
+                              {a.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={handleAddIngreso}
                     >
-                      <div className="flex-1 border-r border-black px-2 py-1">
-                        {record.name}
-                        {record.linkedTo && (
-                          <span className="ml-1 text-xs text-gray-500">
-                            ({getLinkedName(record.linkedTo)})
-                          </span>
-                        )}
-                      </div>
-                      <div className="w-32 px-2 py-1 text-right">
-                        {formatAmount(record.amount, record.currency)}{" "}
-                        {record.currency}
-                      </div>
-                    </div>
-                  ))
-                )}
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
 
               {/* Gastos */}
@@ -348,34 +306,84 @@ export default function Home() {
                 <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
                   Gastos
                 </div>
-                {gastos.length === 0 ? (
-                  <div className="flex border-b border-black text-sm">
-                    <div className="flex-1 border-r border-black px-2 py-1 text-gray-400">
-                      Sin gastos
-                    </div>
-                    <div className="w-32 px-2 py-1 text-right">—</div>
+                <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
+                  <div className="flex-1 border-r border-black px-2 py-1">
+                    Descripcion
                   </div>
-                ) : (
-                  gastos.map((record) => (
-                    <div
-                      key={record.id}
-                      className="flex border-b border-black text-sm"
-                    >
-                      <div className="flex-1 border-r border-black px-2 py-1">
-                        {record.name}
-                        {record.linkedTo && (
-                          <span className="ml-1 text-xs text-gray-500">
-                            ({getLinkedName(record.linkedTo)})
-                          </span>
-                        )}
-                      </div>
-                      <div className="w-32 px-2 py-1 text-right">
-                        {formatAmount(record.amount, record.currency)}{" "}
-                        {record.currency}
-                      </div>
+                  <div className="w-32 border-r border-black px-2 py-1 text-right">Monto</div>
+                  <div className="w-24 px-2 py-1 text-center">Pasivo</div>
+                </div>
+                {gastos.map((record) => (
+                  <div
+                    key={record.id}
+                    className="flex border-b border-black text-sm"
+                  >
+                    <div className="flex-1 border-r border-black px-2 py-1">
+                      {record.name}
                     </div>
-                  ))
-                )}
+                    <div className="w-32 border-r border-black px-2 py-1 text-right">
+                      {formatAmount(record.amount, record.currency)}{" "}
+                      {record.currency}
+                    </div>
+                    <div className="w-24 px-2 py-1 text-center text-xs text-gray-500">
+                      {record.linkedTo ? getLinkedName(record.linkedTo) : "—"}
+                    </div>
+                  </div>
+                ))}
+                {/* Input row for new gasto */}
+                <div className="flex border-b border-black bg-gray-50 text-sm">
+                  <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
+                    <Input
+                      placeholder="Nuevo gasto..."
+                      value={gastoForm.name}
+                      onChange={(e) => setGastoForm({ ...gastoForm, name: e.target.value })}
+                      className="h-7 border-black text-xs"
+                    />
+                  </div>
+                  <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-1">
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={gastoForm.amount}
+                      onChange={(e) => setGastoForm({ ...gastoForm, amount: e.target.value })}
+                      className="h-7 w-16 border-black text-xs"
+                    />
+                    <CurrencySelect
+                      value={gastoForm.currency}
+                      onChange={(v) => setGastoForm({ ...gastoForm, currency: v })}
+                    />
+                  </div>
+                  <div className="flex w-24 items-center gap-1 px-1 py-1">
+                    {pasivos.length > 0 ? (
+                      <Select
+                        value={gastoForm.linkedTo}
+                        onValueChange={(v) => setGastoForm({ ...gastoForm, linkedTo: v })}
+                      >
+                        <SelectTrigger className="h-7 w-full border-black text-xs">
+                          <SelectValue placeholder="—" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">—</SelectItem>
+                          {pasivos.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <span className="text-xs text-gray-400">—</span>
+                    )}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 w-7 p-0"
+                      onClick={handleAddGasto}
+                    >
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -422,34 +430,63 @@ export default function Home() {
               <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
                 Activos
               </div>
-              {activos.length === 0 ? (
-                <div className="flex border-b border-black text-sm">
-                  <div className="flex-1 px-2 py-1 text-gray-400">
-                    Sin activos
-                  </div>
-                  <div className="w-32 px-2 py-1 text-right">—</div>
+              <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
+                <div className="flex-1 border-r border-black px-2 py-1">
+                  Descripcion
                 </div>
-              ) : (
-                activos.map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex border-b border-black text-sm"
-                  >
-                    <div className="flex-1 border-r border-black px-2 py-1">
-                      {record.name}
-                    </div>
-                    <div className="w-32 px-2 py-1 text-right">
-                      {formatAmount(record.amount, record.currency)}{" "}
-                      {record.currency}
-                    </div>
+                <div className="w-36 px-2 py-1 text-right">Valor</div>
+              </div>
+              {activos.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex border-b border-black text-sm"
+                >
+                  <div className="flex-1 border-r border-black px-2 py-1">
+                    {record.name}
                   </div>
-                ))
-              )}
+                  <div className="w-36 px-2 py-1 text-right">
+                    {formatAmount(record.amount, record.currency)}{" "}
+                    {record.currency}
+                  </div>
+                </div>
+              ))}
+              {/* Input row for new activo */}
+              <div className="flex border-b border-black bg-gray-50 text-sm">
+                <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
+                  <Input
+                    placeholder="Nuevo activo..."
+                    value={activoForm.name}
+                    onChange={(e) => setActivoForm({ ...activoForm, name: e.target.value })}
+                    className="h-7 border-black text-xs"
+                  />
+                </div>
+                <div className="flex w-36 items-center gap-1 px-1 py-1">
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={activoForm.amount}
+                    onChange={(e) => setActivoForm({ ...activoForm, amount: e.target.value })}
+                    className="h-7 w-16 border-black text-xs"
+                  />
+                  <CurrencySelect
+                    value={activoForm.currency}
+                    onChange={(v) => setActivoForm({ ...activoForm, currency: v })}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={handleAddActivo}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
                   Total Activos:
                 </div>
-                <div className="w-32 px-2 py-1 text-right">
+                <div className="w-36 px-2 py-1 text-right">
                   {formatTotals(totalActivos)}
                 </div>
               </div>
@@ -460,34 +497,63 @@ export default function Home() {
               <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
                 Obligaciones
               </div>
-              {pasivos.length === 0 ? (
-                <div className="flex border-b border-black text-sm">
-                  <div className="flex-1 px-2 py-1 text-gray-400">
-                    Sin obligaciones
-                  </div>
-                  <div className="w-32 px-2 py-1 text-right">—</div>
+              <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
+                <div className="flex-1 border-r border-black px-2 py-1">
+                  Descripcion
                 </div>
-              ) : (
-                pasivos.map((record) => (
-                  <div
-                    key={record.id}
-                    className="flex border-b border-black text-sm"
-                  >
-                    <div className="flex-1 border-r border-black px-2 py-1">
-                      {record.name}
-                    </div>
-                    <div className="w-32 px-2 py-1 text-right">
-                      {formatAmount(record.amount, record.currency)}{" "}
-                      {record.currency}
-                    </div>
+                <div className="w-36 px-2 py-1 text-right">Valor</div>
+              </div>
+              {pasivos.map((record) => (
+                <div
+                  key={record.id}
+                  className="flex border-b border-black text-sm"
+                >
+                  <div className="flex-1 border-r border-black px-2 py-1">
+                    {record.name}
                   </div>
-                ))
-              )}
+                  <div className="w-36 px-2 py-1 text-right">
+                    {formatAmount(record.amount, record.currency)}{" "}
+                    {record.currency}
+                  </div>
+                </div>
+              ))}
+              {/* Input row for new pasivo */}
+              <div className="flex border-b border-black bg-gray-50 text-sm">
+                <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
+                  <Input
+                    placeholder="Nueva obligacion..."
+                    value={pasivoForm.name}
+                    onChange={(e) => setPasivoForm({ ...pasivoForm, name: e.target.value })}
+                    className="h-7 border-black text-xs"
+                  />
+                </div>
+                <div className="flex w-36 items-center gap-1 px-1 py-1">
+                  <Input
+                    type="number"
+                    placeholder="0.00"
+                    value={pasivoForm.amount}
+                    onChange={(e) => setPasivoForm({ ...pasivoForm, amount: e.target.value })}
+                    className="h-7 w-16 border-black text-xs"
+                  />
+                  <CurrencySelect
+                    value={pasivoForm.currency}
+                    onChange={(v) => setPasivoForm({ ...pasivoForm, currency: v })}
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 w-7 p-0"
+                    onClick={handleAddPasivo}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
               <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
                   Total Obligaciones:
                 </div>
-                <div className="w-32 px-2 py-1 text-right">
+                <div className="w-36 px-2 py-1 text-right">
                   {formatTotals(totalPasivos)}
                 </div>
               </div>
