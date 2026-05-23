@@ -24,6 +24,14 @@ interface FinancialRecord {
   linkedTo?: string
 }
 
+interface EditableRow {
+  id: string
+  name: string
+  amount: string
+  currency: Currency
+  linkedTo: string
+}
+
 const currencySymbols: Record<Currency, string> = {
   USD: "$",
   EUR: "€",
@@ -37,29 +45,11 @@ const defaultCurrency: Currency = "USD"
 export default function Home() {
   const [records, setRecords] = useState<FinancialRecord[]>([])
 
-  // Form states for each section
-  const [ingresoForm, setIngresoForm] = useState({
-    name: "",
-    amount: "",
-    currency: defaultCurrency,
-    linkedTo: "",
-  })
-  const [gastoForm, setGastoForm] = useState({
-    name: "",
-    amount: "",
-    currency: defaultCurrency,
-    linkedTo: "",
-  })
-  const [activoForm, setActivoForm] = useState({
-    name: "",
-    amount: "",
-    currency: defaultCurrency,
-  })
-  const [pasivoForm, setPasivoForm] = useState({
-    name: "",
-    amount: "",
-    currency: defaultCurrency,
-  })
+  // Editable rows for each section
+  const [ingresoRows, setIngresoRows] = useState<EditableRow[]>([])
+  const [gastoRows, setGastoRows] = useState<EditableRow[]>([])
+  const [activoRows, setActivoRows] = useState<EditableRow[]>([])
+  const [pasivoRows, setPasivoRows] = useState<EditableRow[]>([])
 
   const activos = records.filter((r) => r.type === "activo")
   const pasivos = records.filter((r) => r.type === "pasivo")
@@ -95,43 +85,85 @@ export default function Home() {
     USDT: totalIngresos.USDT - totalGastos.USDT,
   }
 
-  const addRecord = (type: RecordType, name: string, amount: string, currency: Currency, linkedTo?: string) => {
-    if (!name || !amount) return false
+  const createEmptyRow = (): EditableRow => ({
+    id: crypto.randomUUID(),
+    name: "",
+    amount: "",
+    currency: defaultCurrency,
+    linkedTo: "",
+  })
+
+  const addNewRow = (type: RecordType) => {
+    const newRow = createEmptyRow()
+    switch (type) {
+      case "ingreso":
+        setIngresoRows([...ingresoRows, newRow])
+        break
+      case "gasto":
+        setGastoRows([...gastoRows, newRow])
+        break
+      case "activo":
+        setActivoRows([...activoRows, newRow])
+        break
+      case "pasivo":
+        setPasivoRows([...pasivoRows, newRow])
+        break
+    }
+  }
+
+  const saveRow = (type: RecordType, row: EditableRow) => {
+    if (!row.name || !row.amount) return
 
     const newRecord: FinancialRecord = {
-      id: crypto.randomUUID(),
+      id: row.id,
       type,
-      name,
-      amount: parseFloat(amount),
-      currency,
-      linkedTo: linkedTo || undefined,
+      name: row.name,
+      amount: parseFloat(row.amount),
+      currency: row.currency,
+      linkedTo: row.linkedTo && row.linkedTo !== "none" ? row.linkedTo : undefined,
     }
 
     setRecords([...records, newRecord])
-    return true
-  }
 
-  const handleAddIngreso = () => {
-    if (addRecord("ingreso", ingresoForm.name, ingresoForm.amount, ingresoForm.currency, ingresoForm.linkedTo)) {
-      setIngresoForm({ name: "", amount: "", currency: defaultCurrency, linkedTo: "" })
+    // Remove from editable rows
+    switch (type) {
+      case "ingreso":
+        setIngresoRows(ingresoRows.filter((r) => r.id !== row.id))
+        break
+      case "gasto":
+        setGastoRows(gastoRows.filter((r) => r.id !== row.id))
+        break
+      case "activo":
+        setActivoRows(activoRows.filter((r) => r.id !== row.id))
+        break
+      case "pasivo":
+        setPasivoRows(pasivoRows.filter((r) => r.id !== row.id))
+        break
     }
   }
 
-  const handleAddGasto = () => {
-    if (addRecord("gasto", gastoForm.name, gastoForm.amount, gastoForm.currency, gastoForm.linkedTo)) {
-      setGastoForm({ name: "", amount: "", currency: defaultCurrency, linkedTo: "" })
-    }
-  }
+  const updateRow = (
+    type: RecordType,
+    rowId: string,
+    field: keyof EditableRow,
+    value: string
+  ) => {
+    const updateRows = (rows: EditableRow[]) =>
+      rows.map((r) => (r.id === rowId ? { ...r, [field]: value } : r))
 
-  const handleAddActivo = () => {
-    if (addRecord("activo", activoForm.name, activoForm.amount, activoForm.currency)) {
-      setActivoForm({ name: "", amount: "", currency: defaultCurrency })
-    }
-  }
-
-  const handleAddPasivo = () => {
-    if (addRecord("pasivo", pasivoForm.name, pasivoForm.amount, pasivoForm.currency)) {
-      setPasivoForm({ name: "", amount: "", currency: defaultCurrency })
+    switch (type) {
+      case "ingreso":
+        setIngresoRows(updateRows(ingresoRows))
+        break
+      case "gasto":
+        setGastoRows(updateRows(gastoRows))
+        break
+      case "activo":
+        setActivoRows(updateRows(activoRows))
+        break
+      case "pasivo":
+        setPasivoRows(updateRows(pasivoRows))
+        break
     }
   }
 
@@ -185,7 +217,7 @@ export default function Home() {
     onChange: (value: Currency) => void
   }) => (
     <Select value={value} onValueChange={onChange}>
-      <SelectTrigger className="h-7 w-20 border-black text-xs">
+      <SelectTrigger className="h-6 w-16 border-0 bg-transparent p-0 text-xs shadow-none focus:ring-0">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
@@ -203,7 +235,7 @@ export default function Home() {
       <div className="mx-auto max-w-5xl">
         {/* Header */}
         <div className="mb-4 border-b-2 border-black pb-2">
-          <div className="bg-black px-4 py-1 text-white inline-block">
+          <div className="inline-block bg-black px-4 py-1 text-white">
             <span className="font-bold">Cash Flow Dashboard</span>
           </div>
         </div>
@@ -218,14 +250,24 @@ export default function Home() {
             <div className="flex-1">
               {/* Ingresos */}
               <div className="border-2 border-black">
-                <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
-                  Ingresos
+                <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
+                  <span className="font-bold italic text-white">Ingresos</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-white hover:bg-white/20"
+                    onClick={() => addNewRow("ingreso")}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 </div>
                 <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
                   <div className="flex-1 border-r border-black px-2 py-1">
                     Descripcion
                   </div>
-                  <div className="w-32 border-r border-black px-2 py-1 text-right">Flujo de Caja</div>
+                  <div className="w-32 border-r border-black px-2 py-1 text-right">
+                    Flujo de Caja
+                  </div>
                   <div className="w-24 px-2 py-1 text-center">Activo</div>
                 </div>
                 {ingresos.map((record) => (
@@ -245,72 +287,84 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {/* Input row for new ingreso */}
-                <div className="flex border-b border-black bg-gray-50 text-sm">
-                  <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
-                    <Input
-                      placeholder="Nuevo ingreso..."
-                      value={ingresoForm.name}
-                      onChange={(e) => setIngresoForm({ ...ingresoForm, name: e.target.value })}
-                      className="h-7 border-black text-xs"
-                    />
+                {/* Editable rows */}
+                {ingresoRows.map((row) => (
+                  <div key={row.id} className="flex border-b border-black text-sm">
+                    <div className="flex-1 border-r border-black px-1 py-0.5">
+                      <Input
+                        placeholder="Descripcion..."
+                        value={row.name}
+                        onChange={(e) =>
+                          updateRow("ingreso", row.id, "name", e.target.value)
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && saveRow("ingreso", row)}
+                        className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-0.5">
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={row.amount}
+                        onChange={(e) =>
+                          updateRow("ingreso", row.id, "amount", e.target.value)
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && saveRow("ingreso", row)}
+                        className="h-6 w-14 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                      />
+                      <CurrencySelect
+                        value={row.currency}
+                        onChange={(v) => updateRow("ingreso", row.id, "currency", v)}
+                      />
+                    </div>
+                    <div className="flex w-24 items-center px-1 py-0.5">
+                      {activos.length > 0 ? (
+                        <Select
+                          value={row.linkedTo}
+                          onValueChange={(v) =>
+                            updateRow("ingreso", row.id, "linkedTo", v)
+                          }
+                        >
+                          <SelectTrigger className="h-6 w-full border-0 bg-transparent p-0 text-xs shadow-none focus:ring-0">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">—</SelectItem>
+                            {activos.map((a) => (
+                              <SelectItem key={a.id} value={a.id}>
+                                {a.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-1">
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={ingresoForm.amount}
-                      onChange={(e) => setIngresoForm({ ...ingresoForm, amount: e.target.value })}
-                      className="h-7 w-16 border-black text-xs"
-                    />
-                    <CurrencySelect
-                      value={ingresoForm.currency}
-                      onChange={(v) => setIngresoForm({ ...ingresoForm, currency: v })}
-                    />
-                  </div>
-                  <div className="flex w-24 items-center gap-1 px-1 py-1">
-                    {activos.length > 0 ? (
-                      <Select
-                        value={ingresoForm.linkedTo}
-                        onValueChange={(v) => setIngresoForm({ ...ingresoForm, linkedTo: v })}
-                      >
-                        <SelectTrigger className="h-7 w-full border-black text-xs">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">—</SelectItem>
-                          {activos.map((a) => (
-                            <SelectItem key={a.id} value={a.id}>
-                              {a.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={handleAddIngreso}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+                ))}
               </div>
 
               {/* Gastos */}
               <div className="mt-4 border-2 border-black">
-                <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
-                  Gastos
+                <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
+                  <span className="font-bold italic text-white">Gastos</span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 w-6 p-0 text-white hover:bg-white/20"
+                    onClick={() => addNewRow("gasto")}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
                 </div>
                 <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
                   <div className="flex-1 border-r border-black px-2 py-1">
                     Descripcion
                   </div>
-                  <div className="w-32 border-r border-black px-2 py-1 text-right">Monto</div>
+                  <div className="w-32 border-r border-black px-2 py-1 text-right">
+                    Monto
+                  </div>
                   <div className="w-24 px-2 py-1 text-center">Pasivo</div>
                 </div>
                 {gastos.map((record) => (
@@ -330,60 +384,62 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {/* Input row for new gasto */}
-                <div className="flex border-b border-black bg-gray-50 text-sm">
-                  <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
-                    <Input
-                      placeholder="Nuevo gasto..."
-                      value={gastoForm.name}
-                      onChange={(e) => setGastoForm({ ...gastoForm, name: e.target.value })}
-                      className="h-7 border-black text-xs"
-                    />
+                {/* Editable rows */}
+                {gastoRows.map((row) => (
+                  <div key={row.id} className="flex border-b border-black text-sm">
+                    <div className="flex-1 border-r border-black px-1 py-0.5">
+                      <Input
+                        placeholder="Descripcion..."
+                        value={row.name}
+                        onChange={(e) =>
+                          updateRow("gasto", row.id, "name", e.target.value)
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && saveRow("gasto", row)}
+                        className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                      />
+                    </div>
+                    <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-0.5">
+                      <Input
+                        type="number"
+                        placeholder="0.00"
+                        value={row.amount}
+                        onChange={(e) =>
+                          updateRow("gasto", row.id, "amount", e.target.value)
+                        }
+                        onKeyDown={(e) => e.key === "Enter" && saveRow("gasto", row)}
+                        className="h-6 w-14 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                      />
+                      <CurrencySelect
+                        value={row.currency}
+                        onChange={(v) => updateRow("gasto", row.id, "currency", v)}
+                      />
+                    </div>
+                    <div className="flex w-24 items-center px-1 py-0.5">
+                      {pasivos.length > 0 ? (
+                        <Select
+                          value={row.linkedTo}
+                          onValueChange={(v) =>
+                            updateRow("gasto", row.id, "linkedTo", v)
+                          }
+                        >
+                          <SelectTrigger className="h-6 w-full border-0 bg-transparent p-0 text-xs shadow-none focus:ring-0">
+                            <SelectValue placeholder="—" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="none">—</SelectItem>
+                            {pasivos.map((p) => (
+                              <SelectItem key={p.id} value={p.id}>
+                                {p.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-1">
-                    <Input
-                      type="number"
-                      placeholder="0.00"
-                      value={gastoForm.amount}
-                      onChange={(e) => setGastoForm({ ...gastoForm, amount: e.target.value })}
-                      className="h-7 w-16 border-black text-xs"
-                    />
-                    <CurrencySelect
-                      value={gastoForm.currency}
-                      onChange={(v) => setGastoForm({ ...gastoForm, currency: v })}
-                    />
-                  </div>
-                  <div className="flex w-24 items-center gap-1 px-1 py-1">
-                    {pasivos.length > 0 ? (
-                      <Select
-                        value={gastoForm.linkedTo}
-                        onValueChange={(v) => setGastoForm({ ...gastoForm, linkedTo: v })}
-                      >
-                        <SelectTrigger className="h-7 w-full border-black text-xs">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="none">—</SelectItem>
-                          {pasivos.map((p) => (
-                            <SelectItem key={p.id} value={p.id}>
-                              {p.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    ) : (
-                      <span className="text-xs text-gray-400">—</span>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 w-7 p-0"
-                      onClick={handleAddGasto}
-                    >
-                      <Plus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
@@ -408,9 +464,7 @@ export default function Home() {
                 <div className="border-t-2 border-black pt-3">
                   <div className="text-sm font-bold">Flujo de Caja Mensual:</div>
                   <div className="border-b-2 border-black text-sm font-bold">
-                    <div className="flex flex-wrap gap-2">
-                      {formatFlujoCaja()}
-                    </div>
+                    <div className="flex flex-wrap gap-2">{formatFlujoCaja()}</div>
                   </div>
                   <div className="mt-1 text-xs text-gray-500">
                     (Ingresos - Gastos)
@@ -427,8 +481,16 @@ export default function Home() {
           <div className="flex">
             {/* Activos */}
             <div className="flex-1 border-2 border-black">
-              <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
-                Activos
+              <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
+                <span className="font-bold italic text-white">Activos</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-white hover:bg-white/20"
+                  onClick={() => addNewRow("activo")}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
               <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
@@ -450,38 +512,38 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-              {/* Input row for new activo */}
-              <div className="flex border-b border-black bg-gray-50 text-sm">
-                <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
-                  <Input
-                    placeholder="Nuevo activo..."
-                    value={activoForm.name}
-                    onChange={(e) => setActivoForm({ ...activoForm, name: e.target.value })}
-                    className="h-7 border-black text-xs"
-                  />
+              {/* Editable rows */}
+              {activoRows.map((row) => (
+                <div key={row.id} className="flex border-b border-black text-sm">
+                  <div className="flex-1 border-r border-black px-1 py-0.5">
+                    <Input
+                      placeholder="Descripcion..."
+                      value={row.name}
+                      onChange={(e) =>
+                        updateRow("activo", row.id, "name", e.target.value)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && saveRow("activo", row)}
+                      className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                  <div className="flex w-36 items-center gap-1 px-1 py-0.5">
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={row.amount}
+                      onChange={(e) =>
+                        updateRow("activo", row.id, "amount", e.target.value)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && saveRow("activo", row)}
+                      className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                    />
+                    <CurrencySelect
+                      value={row.currency}
+                      onChange={(v) => updateRow("activo", row.id, "currency", v)}
+                    />
+                  </div>
                 </div>
-                <div className="flex w-36 items-center gap-1 px-1 py-1">
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    value={activoForm.amount}
-                    onChange={(e) => setActivoForm({ ...activoForm, amount: e.target.value })}
-                    className="h-7 w-16 border-black text-xs"
-                  />
-                  <CurrencySelect
-                    value={activoForm.currency}
-                    onChange={(v) => setActivoForm({ ...activoForm, currency: v })}
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0"
-                    onClick={handleAddActivo}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              ))}
               <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
                   Total Activos:
@@ -494,8 +556,16 @@ export default function Home() {
 
             {/* Obligaciones (Pasivos) */}
             <div className="flex-1 border-2 border-l-0 border-black">
-              <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
-                Obligaciones
+              <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
+                <span className="font-bold italic text-white">Obligaciones</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 w-6 p-0 text-white hover:bg-white/20"
+                  onClick={() => addNewRow("pasivo")}
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
               </div>
               <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
@@ -517,38 +587,38 @@ export default function Home() {
                   </div>
                 </div>
               ))}
-              {/* Input row for new pasivo */}
-              <div className="flex border-b border-black bg-gray-50 text-sm">
-                <div className="flex flex-1 items-center gap-1 border-r border-black px-1 py-1">
-                  <Input
-                    placeholder="Nueva obligacion..."
-                    value={pasivoForm.name}
-                    onChange={(e) => setPasivoForm({ ...pasivoForm, name: e.target.value })}
-                    className="h-7 border-black text-xs"
-                  />
+              {/* Editable rows */}
+              {pasivoRows.map((row) => (
+                <div key={row.id} className="flex border-b border-black text-sm">
+                  <div className="flex-1 border-r border-black px-1 py-0.5">
+                    <Input
+                      placeholder="Descripcion..."
+                      value={row.name}
+                      onChange={(e) =>
+                        updateRow("pasivo", row.id, "name", e.target.value)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && saveRow("pasivo", row)}
+                      className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                    />
+                  </div>
+                  <div className="flex w-36 items-center gap-1 px-1 py-0.5">
+                    <Input
+                      type="number"
+                      placeholder="0.00"
+                      value={row.amount}
+                      onChange={(e) =>
+                        updateRow("pasivo", row.id, "amount", e.target.value)
+                      }
+                      onKeyDown={(e) => e.key === "Enter" && saveRow("pasivo", row)}
+                      className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                    />
+                    <CurrencySelect
+                      value={row.currency}
+                      onChange={(v) => updateRow("pasivo", row.id, "currency", v)}
+                    />
+                  </div>
                 </div>
-                <div className="flex w-36 items-center gap-1 px-1 py-1">
-                  <Input
-                    type="number"
-                    placeholder="0.00"
-                    value={pasivoForm.amount}
-                    onChange={(e) => setPasivoForm({ ...pasivoForm, amount: e.target.value })}
-                    className="h-7 w-16 border-black text-xs"
-                  />
-                  <CurrencySelect
-                    value={pasivoForm.currency}
-                    onChange={(v) => setPasivoForm({ ...pasivoForm, currency: v })}
-                  />
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-7 w-7 p-0"
-                    onClick={handleAddPasivo}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
+              ))}
               <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
                 <div className="flex-1 border-r border-black px-2 py-1">
                   Total Obligaciones:
