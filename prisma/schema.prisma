@@ -1,0 +1,160 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ──────────────────────────────────────────────────────
+// Tablas existentes (extendidas con nuevos campos)
+// ──────────────────────────────────────────────────────
+
+model Record {
+  id       String  @id
+  type     String  // "activo" | "pasivo" | "ingreso" | "gasto"
+  name     String
+  amount   Decimal @db.Decimal
+  currency String
+  linkedTo String? @map("linked_to")
+
+  // Nuevos campos — nullable para compatibilidad con datos existentes
+  userId        String?   @map("user_id")
+  description   String?
+  operationDate DateTime? @map("operation_date")
+  deletedAt     DateTime? @map("deleted_at")
+  assetType     String?   @map("asset_type")
+  ticker        String?
+  currentQty    Decimal?  @map("current_quantity") @db.Decimal(18, 8)
+  avgBuyPrice   Decimal?  @map("avg_buy_price")    @db.Decimal(18, 4)
+
+  user               User?               @relation(fields: [userId], references: [id])
+  groups             RecordGroup[]
+  financialMovements FinancialMovement[]
+  auditLogs          AuditLog[]
+
+  @@map("records")
+  @@index([userId])
+  @@index([userId, type])
+}
+
+model Snapshot {
+  id        String @id
+  name      String
+  period    String          // legacy: texto libre o "DD/MM/YYYY - DD/MM/YYYY"
+  createdAt String @map("created_at") // legacy: string formateado en español
+
+  // Nuevos campos
+  userId    String?   @map("user_id")
+  startDate DateTime? @map("start_date")
+  endDate   DateTime? @map("end_date")
+  data      Json?     // jsonb: estado consolidado (Fase 4)
+
+  user            User?            @relation(fields: [userId], references: [id])
+  snapshotRecords SnapshotRecord[]
+
+  @@map("snapshots")
+  @@index([userId])
+}
+
+model SnapshotRecord {
+  id         String  @id
+  snapshotId String  @map("snapshot_id")
+  type       String
+  name       String
+  amount     Decimal @db.Decimal
+  currency   String
+  linkedTo   String? @map("linked_to")
+
+  snapshot Snapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+
+  @@map("snapshot_records")
+  @@index([snapshotId])
+}
+
+model AuditLog {
+  id         String @id
+  date       String
+  action     String // "creado" | "editado" | "eliminado"
+  recordType String @map("record_type")
+  recordName String @map("record_name")
+  detail     String
+  comment    String @default("")
+
+  // Nuevos campos
+  userId   String? @map("user_id")
+  recordId String? @map("record_id")
+
+  user   User?   @relation(fields: [userId], references: [id])
+  record Record? @relation(fields: [recordId], references: [id])
+
+  @@map("movements")
+  @@index([userId])
+}
+
+// ──────────────────────────────────────────────────────
+// Tablas nuevas
+// ──────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt      @map("updated_at")
+
+  records            Record[]
+  groups             Group[]
+  snapshots          Snapshot[]
+  financialMovements FinancialMovement[]
+  auditLogs          AuditLog[]
+
+  @@map("users")
+}
+
+model FinancialMovement {
+  id            String   @id @default(uuid())
+  userId        String   @map("user_id")
+  recordId      String   @map("record_id")
+  movementType  String   @map("movement_type") // BUY | SELL | DIVIDEND | FEE | etc.
+  amount        Decimal  @db.Decimal(18, 4)
+  quantity      Decimal? @db.Decimal(18, 8)
+  unitPrice     Decimal? @map("unit_price")    @db.Decimal(18, 4)
+  currency      String
+  exchangeRate  Decimal? @map("exchange_rate") @db.Decimal(18, 6)
+  description   String?
+  operationDate DateTime @map("operation_date") @default(now())
+  createdAt     DateTime @default(now())        @map("created_at")
+
+  user   User   @relation(fields: [userId], references: [id])
+  record Record @relation(fields: [recordId], references: [id])
+
+  @@map("financial_movements")
+  @@index([userId, operationDate])
+  @@index([recordId])
+}
+
+model Group {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  groupType String   @map("group_type") // ASSET | INCOME | EXPENSE | LIABILITY
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user    User          @relation(fields: [userId], references: [id])
+  records RecordGroup[]
+
+  @@map("groups")
+}
+
+model RecordGroup {
+  recordId String @map("record_id")
+  groupId  String @map("group_id")
+
+  record Record @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  group  Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@id([recordId, groupId])
+  @@map("record_groups")
+}

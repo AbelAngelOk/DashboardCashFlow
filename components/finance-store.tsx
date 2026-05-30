@@ -1,6 +1,13 @@
 "use client"
 
-import { createContext, useContext, useState, type ReactNode } from "react"
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react"
 import {
   type FinancialRecord,
   type Movement,
@@ -8,6 +15,14 @@ import {
   formatAmount,
   recordTypeLabels,
 } from "@/lib/finance"
+import {
+  dbCreateRecord,
+  dbDeleteRecord,
+  dbEditRecord,
+  dbTakeSnapshot,
+  dbUpdateComment,
+  loadData,
+} from "@/lib/actions"
 
 function now() {
   return new Date().toLocaleString("es-ES", {
@@ -26,10 +41,15 @@ export function currentPeriod() {
   })
 }
 
+function fire(p: Promise<unknown>) {
+  p.catch(console.error)
+}
+
 interface FinanceContextValue {
   records: FinancialRecord[]
   snapshots: Snapshot[]
   movements: Movement[]
+  loading: boolean
   createRecord: (record: FinancialRecord) => void
   editRecord: (record: FinancialRecord, previous: FinancialRecord) => void
   deleteRecord: (record: FinancialRecord) => void
@@ -44,29 +64,40 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [records, setRecords] = useState<FinancialRecord[]>([])
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadData()
+      .then((data) => {
+        setRecords(data.records)
+        setSnapshots(data.snapshots)
+        setMovements(data.movements)
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false))
+  }, [])
 
   const logMovement = (
     action: Movement["action"],
     record: FinancialRecord,
     detail: string,
-  ) => {
-    setMovements((prev) => [
-      {
-        id: crypto.randomUUID(),
-        date: now(),
-        action,
-        recordType: record.type,
-        recordName: record.name,
-        detail,
-        comment: "",
-      },
-      ...prev,
-    ])
+  ): Movement => {
+    const movement: Movement = {
+      id: crypto.randomUUID(),
+      date: now(),
+      action,
+      recordType: record.type,
+      recordName: record.name,
+      detail,
+      comment: "",
+    }
+    setMovements((prev) => [movement, ...prev])
+    return movement
   }
 
   const createRecord = (record: FinancialRecord) => {
     setRecords((prev) => [...prev, record])
-    logMovement(
+    const movement = logMovement(
       "creado",
       record,
       `${recordTypeLabels[record.type]} "${record.name}" por ${formatAmount(
@@ -74,6 +105,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         record.currency,
       )} ${record.currency}`,
     )
+    fire(dbCreateRecord(record, movement))
   }
 
   const editRecord = (record: FinancialRecord, previous: FinancialRecord) => {
@@ -90,16 +122,17 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
           previous.currency
         } → ${formatAmount(record.amount, record.currency)} ${record.currency}`,
       )
-    logMovement(
+    const movement = logMovement(
       "editado",
       record,
       changes.length ? changes.join(", ") : "sin cambios de valor",
     )
+    fire(dbEditRecord(record, movement))
   }
 
   const deleteRecord = (record: FinancialRecord) => {
     setRecords((prev) => prev.filter((r) => r.id !== record.id))
-    logMovement(
+    const movement = logMovement(
       "eliminado",
       record,
       `${recordTypeLabels[record.type]} "${record.name}" (${formatAmount(
@@ -107,25 +140,33 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         record.currency,
       )} ${record.currency})`,
     )
+    fire(dbDeleteRecord(record, movement))
   }
 
   const takeSnapshot = (name: string, period: string) => {
-    setSnapshots((prev) => [
-      {
-        id: crypto.randomUUID(),
-        name: name.trim(),
-        period: period.trim() || currentPeriod(),
-        createdAt: now(),
-        records: records.map((r) => ({ ...r })),
-      },
-      ...prev,
-    ])
+    const snapshot: Snapshot = {
+      id: crypto.randomUUID(),
+      name: name.trim(),
+      period: period.trim() || currentPeriod(),
+      createdAt: now(),
+      records: records.map((r) => ({ ...r })),
+    }
+    setSnapshots((prev) => [snapshot, ...prev])
+    fire(dbTakeSnapshot(snapshot))
   }
 
-  const updateComment = (id: string, comment: string) =>
+  // Debounce DB writes to avoid a round-trip on every keystroke
+  const commentTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+
+  const updateComment = (id: string, comment: string) => {
     setMovements((prev) =>
       prev.map((m) => (m.id === id ? { ...m, comment } : m)),
     )
+    clearTimeout(commentTimers.current[id])
+    commentTimers.current[id] = setTimeout(() => {
+      fire(dbUpdateComment(id, comment))
+    }, 600)
+  }
 
   const getSnapshot = (id: string) => snapshots.find((s) => s.id === id)
 
@@ -135,6 +176,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         records,
         snapshots,
         movements,
+        loading,
         createRecord,
         editRecord,
         deleteRecord,

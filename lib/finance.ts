@@ -79,3 +79,35 @@ export function formatTotals(totals: Record<Currency, number>) {
   if (active.length === 0) return "—"
   return active.map((c) => `${formatAmount(totals[c], c)} ${c}`).join(" | ")
 }
+
+// Returns active (non-zero) currencies sorted by absolute value descending
+export function activeCurrencies(totals: Record<Currency, number>): Currency[] {
+  return (Object.keys(totals) as Currency[])
+    .filter((c) => totals[c] !== 0)
+    .sort((a, b) => Math.abs(totals[b]) - Math.abs(totals[a]))
+}
+
+// Converts amount from one currency to another using rates relative to a shared base
+export function convertAmount(
+  amount: number,
+  from: Currency,
+  to: Currency,
+  rates: Record<Currency, number>, // rates[X] = how many "base" units 1 X is worth
+): number {
+  if (from === to) return amount
+  const rateFrom = rates[from] ?? 1
+  const rateTo = rates[to] ?? 1
+  return (amount * rateFrom) / rateTo
+}
+
+// Sums all records converting each to baseCurrency
+export function calculateTotalsConverted(
+  records: FinancialRecord[],
+  baseCurrency: Currency,
+  rates: Record<Currency, number>,
+): number {
+  return records.reduce(
+    (sum, r) => sum + convertAmount(r.amount, r.currency, baseCurrency, rates),
+    0,
+  )
+}

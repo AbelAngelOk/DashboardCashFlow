@@ -2,13 +2,15 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Camera, History } from "lucide-react"
+import { useSession, signOut } from "next-auth/react"
+import { LayoutDashboard, Camera, History, LogOut, Settings2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useFinance } from "@/components/finance-store"
 
 export function AppSidebar() {
   const pathname = usePathname()
   const { snapshots, movements } = useFinance()
+  const { data: session } = useSession()
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href)
@@ -31,6 +33,12 @@ export function AppSidebar() {
       label: "Movimientos",
       icon: History,
       badge: movements.length,
+    },
+    {
+      href: "/configuracion",
+      label: "Personalización",
+      icon: Settings2,
+      badge: undefined,
     },
   ]
 
@@ -70,6 +78,21 @@ export function AppSidebar() {
           )
         })}
       </nav>
+
+      {session?.user && (
+        <div className="border-t-2 border-black p-3">
+          <p className="truncate text-xs font-semibold text-gray-700">
+            {session.user.name ?? session.user.email}
+          </p>
+          <button
+            onClick={() => signOut({ callbackUrl: "/login" })}
+            className="mt-2 flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Cerrar sesión
+          </button>
+        </div>
+      )}
     </aside>
   )
 }

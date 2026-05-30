@@ -15,12 +15,81 @@ import {
   type Currency,
   type FinancialRecord,
   type RecordType,
+  activeCurrencies,
   calculateTotals,
+  calculateTotalsConverted,
+  convertAmount,
   currencies,
   defaultCurrency,
   formatAmount,
-  formatTotals,
 } from "@/lib/finance"
+import { useSettings } from "@/components/settings-store"
+
+// ── Amount display helpers ────────────────────────────────────────────────────
+
+function RecordAmount({ record }: { record: FinancialRecord }) {
+  const { settings } = useSettings()
+  const { convertCurrencies, showConvertedAmounts, baseCurrency, exchangeRates } = settings
+
+  if (convertCurrencies && showConvertedAmounts && record.currency !== baseCurrency) {
+    const converted = convertAmount(record.amount, record.currency, baseCurrency, exchangeRates)
+    return (
+      <div className="flex flex-col items-end leading-tight">
+        <span>
+          {formatAmount(converted, baseCurrency)} {baseCurrency}
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {formatAmount(record.amount, record.currency)} {record.currency}
+        </span>
+      </div>
+    )
+  }
+
+  return (
+    <span>
+      {formatAmount(record.amount, record.currency)} {record.currency}
+    </span>
+  )
+}
+
+// Renders a block of totals — multi-currency lines OR single converted value
+function TotalsBlock({
+  records,
+  className,
+}: {
+  records: FinancialRecord[]
+  className?: string
+}) {
+  const { settings } = useSettings()
+  const { convertCurrencies, baseCurrency, exchangeRates } = settings
+  const totals = calculateTotals(records)
+
+  if (convertCurrencies) {
+    const total = calculateTotalsConverted(records, baseCurrency, exchangeRates)
+    return (
+      <div className={className}>
+        <span>
+          {formatAmount(total, baseCurrency)} {baseCurrency}
+        </span>
+      </div>
+    )
+  }
+
+  const active = activeCurrencies(totals)
+  if (active.length === 0) return <div className={className}>—</div>
+
+  return (
+    <div className={`flex flex-col items-end gap-0.5 ${className ?? ""}`}>
+      {active.map((c) => (
+        <span key={c}>
+          {formatAmount(totals[c], c)} {c}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+// ── CurrencySelect ────────────────────────────────────────────────────────────
 
 interface DraftRow {
   id: string
@@ -61,6 +130,8 @@ function CurrencySelect({
   )
 }
 
+// ── SectionTable ─────────────────────────────────────────────────────────────
+
 interface SectionTableProps {
   title: string
   type: RecordType
@@ -95,7 +166,6 @@ function SectionTable({
   const linkOptions = linkType
     ? allRecords.filter((r) => r.type === linkType)
     : []
-  const totals = calculateTotals(records)
 
   const getLinkedName = (id?: string) => {
     if (!id) return "—"
@@ -191,7 +261,7 @@ function SectionTable({
       {/* Column headers */}
       <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
         <div className="flex-1 border-r border-black px-2 py-1">Descripción</div>
-        <div className="w-32 border-r border-black px-2 py-1 text-right">
+        <div className="w-36 border-r border-black px-2 py-1 text-right">
           {valueLabel}
         </div>
         {hasLink && (
@@ -215,14 +285,14 @@ function SectionTable({
                 className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
               />
             </div>
-            <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-0.5">
+            <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
               <Input
                 type="number"
                 value={editDraft.amount}
                 onChange={(e) =>
                   setEditDraft({ ...editDraft, amount: e.target.value })
                 }
-                className="h-6 w-14 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
               />
               <CurrencySelect
                 value={editDraft.currency}
@@ -276,8 +346,8 @@ function SectionTable({
             <div className="flex-1 border-r border-black px-2 py-1">
               {record.name}
             </div>
-            <div className="w-32 border-r border-black px-2 py-1 text-right">
-              {formatAmount(record.amount, record.currency)} {record.currency}
+            <div className="w-36 border-r border-black px-2 py-1 text-right">
+              <RecordAmount record={record} />
             </div>
             {hasLink && (
               <div className="w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500">
@@ -320,14 +390,14 @@ function SectionTable({
                 className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
               />
             </div>
-            <div className="flex w-32 items-center gap-1 border-r border-black px-1 py-0.5">
+            <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
               <Input
                 type="number"
                 placeholder="0.00"
                 value={row.amount}
                 onChange={(e) => updateNewRow(row.id, "amount", e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveNewRow(row)}
-                className="h-6 w-14 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
               />
               <CurrencySelect
                 value={row.currency}
@@ -373,16 +443,20 @@ function SectionTable({
           </div>
         ))}
 
-      {/* Totals */}
-      <div className="flex border-t-2 border-black bg-gray-100 text-sm font-bold">
+      {/* Totals footer */}
+      <div className="flex items-center border-t-2 border-black bg-gray-100 text-sm font-bold">
         <div className="flex-1 border-r border-black px-2 py-1">
           Total {title}:
         </div>
-        <div className="flex-1 px-2 py-1 text-right">{formatTotals(totals)}</div>
+        <div className="flex-1 px-2 py-1">
+          <TotalsBlock records={records} className="text-right" />
+        </div>
       </div>
     </div>
   )
 }
+
+// ── DashboardSheet ────────────────────────────────────────────────────────────
 
 export function DashboardSheet({
   records,
@@ -391,20 +465,33 @@ export function DashboardSheet({
   onEdit,
   onDelete,
 }: DashboardSheetProps) {
+  const { settings } = useSettings()
+  const { convertCurrencies, baseCurrency, exchangeRates } = settings
+
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
   const activos = records.filter((r) => r.type === "activo")
   const pasivos = records.filter((r) => r.type === "pasivo")
 
+  // ── Auditor values ──────────────────────────────────────────────────────────
   const totalIngresos = calculateTotals(ingresos)
   const totalGastos = calculateTotals(gastos)
 
-  const flujoCaja = (Object.keys(totalIngresos) as Currency[])
-    .map((c) => ({ currency: c, value: totalIngresos[c] - totalGastos[c] }))
-    .filter(
-      (f) =>
-        totalIngresos[f.currency] !== 0 || totalGastos[f.currency] !== 0,
-    )
+  // Multi-currency flujo (mode OFF)
+  const flujoCajaCurrencies = activeCurrencies(totalIngresos).concat(
+    activeCurrencies(totalGastos).filter(
+      (c) => !activeCurrencies(totalIngresos).includes(c),
+    ),
+  )
+  const flujoCaja = flujoCajaCurrencies.map((c) => ({
+    currency: c,
+    value: (totalIngresos[c] ?? 0) - (totalGastos[c] ?? 0),
+  }))
+
+  // Converted flujo (mode ON)
+  const convertedIngresos = calculateTotalsConverted(ingresos, baseCurrency, exchangeRates)
+  const convertedGastos = calculateTotalsConverted(gastos, baseCurrency, exchangeRates)
+  const convertedFlujo = convertedIngresos - convertedGastos
 
   return (
     <div>
@@ -421,8 +508,6 @@ export function DashboardSheet({
               records={ingresos}
               allRecords={records}
               valueLabel="Flujo de Caja"
-              linkType="activo"
-              linkLabel="Activo"
               readOnly={readOnly}
               onCreate={onCreate}
               onEdit={onEdit}
@@ -434,8 +519,6 @@ export function DashboardSheet({
               records={gastos}
               allRecords={records}
               valueLabel="Monto"
-              linkType="pasivo"
-              linkLabel="Pasivo"
               readOnly={readOnly}
               onCreate={onCreate}
               onEdit={onEdit}
@@ -449,39 +532,70 @@ export function DashboardSheet({
               Auditor
             </div>
             <div className="space-y-4 p-3">
+              {/* Total Ingresos */}
               <div>
                 <div className="text-sm font-bold">Total Ingresos:</div>
-                <div className="border-b border-black text-sm">
-                  {formatTotals(totalIngresos)}
+                <div className="border-b border-black py-0.5 text-sm">
+                  {convertCurrencies ? (
+                    <span>
+                      {formatAmount(convertedIngresos, baseCurrency)} {baseCurrency}
+                    </span>
+                  ) : (
+                    <TotalsBlock records={ingresos} />
+                  )}
                 </div>
               </div>
+
+              {/* Total Gastos */}
               <div>
                 <div className="text-sm font-bold">Total Gastos:</div>
-                <div className="border-b border-black text-sm">
-                  {formatTotals(totalGastos)}
+                <div className="border-b border-black py-0.5 text-sm">
+                  {convertCurrencies ? (
+                    <span>
+                      {formatAmount(convertedGastos, baseCurrency)} {baseCurrency}
+                    </span>
+                  ) : (
+                    <TotalsBlock records={gastos} />
+                  )}
                 </div>
               </div>
+
+              {/* Flujo de Caja */}
               <div className="border-t-2 border-black pt-3">
                 <div className="text-sm font-bold">Flujo de Caja Mensual:</div>
-                <div className="flex flex-wrap gap-2 border-b-2 border-black pb-1 text-sm font-bold">
-                  {flujoCaja.length === 0 ? (
+                <div className="border-b-2 border-black pb-1 text-sm font-bold">
+                  {convertCurrencies ? (
+                    <span
+                      className={
+                        convertedFlujo >= 0 ? "text-emerald-700" : "text-rose-700"
+                      }
+                    >
+                      {convertedFlujo >= 0 ? "+" : ""}
+                      {formatAmount(convertedFlujo, baseCurrency)} {baseCurrency}
+                    </span>
+                  ) : flujoCaja.length === 0 ? (
                     "—"
                   ) : (
-                    flujoCaja.map((f) => (
-                      <span
-                        key={f.currency}
-                        className={
-                          f.value >= 0 ? "text-emerald-700" : "text-rose-700"
-                        }
-                      >
-                        {f.value >= 0 ? "+" : ""}
-                        {formatAmount(f.value, f.currency)} {f.currency}
-                      </span>
-                    ))
+                    <div className="flex flex-col gap-0.5">
+                      {flujoCaja.map((f) => (
+                        <span
+                          key={f.currency}
+                          className={
+                            f.value >= 0 ? "text-emerald-700" : "text-rose-700"
+                          }
+                        >
+                          {f.value >= 0 ? "+" : ""}
+                          {formatAmount(f.value, f.currency)} {f.currency}
+                        </span>
+                      ))}
+                    </div>
                   )}
                 </div>
                 <div className="mt-1 text-xs text-gray-500">
                   (Ingresos - Gastos)
+                  {convertCurrencies && (
+                    <span className="ml-1 text-gray-400">≈ {baseCurrency}</span>
+                  )}
                 </div>
               </div>
             </div>

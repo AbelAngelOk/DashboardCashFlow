@@ -22,17 +22,32 @@ export default function DashboardPage() {
 
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
   const [snapshotName, setSnapshotName] = useState("")
-  const [snapshotPeriod, setSnapshotPeriod] = useState("")
+  const [snapshotDateFrom, setSnapshotDateFrom] = useState("")
+  const [snapshotDateTo, setSnapshotDateTo] = useState("")
 
   const openSnapshotDialog = () => {
+    const today = new Date()
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     setSnapshotName(`Snapshot ${snapshots.length + 1}`)
-    setSnapshotPeriod(currentPeriod())
+    setSnapshotDateFrom(firstDay.toISOString().slice(0, 10))
+    setSnapshotDateTo(lastDay.toISOString().slice(0, 10))
     setSnapshotDialogOpen(true)
   }
 
+  const formatDate = (iso: string) =>
+    iso
+      ? new Date(iso + "T12:00:00").toLocaleDateString("es-ES", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        })
+      : ""
+
   const confirmSnapshot = () => {
     if (!snapshotName.trim()) return
-    takeSnapshot(snapshotName, snapshotPeriod)
+    const period = `${formatDate(snapshotDateFrom)} - ${formatDate(snapshotDateTo)}`
+    takeSnapshot(snapshotName, period)
     setSnapshotDialogOpen(false)
   }
 
@@ -77,14 +92,25 @@ export default function DashboardPage() {
                 placeholder="Ej: Cierre de mes"
               />
             </div>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="snap-period">Periodo de tiempo</Label>
-              <Input
-                id="snap-period"
-                value={snapshotPeriod}
-                onChange={(e) => setSnapshotPeriod(e.target.value)}
-                placeholder="Ej: Enero 2026"
-              />
+            <div className="flex gap-3">
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="snap-from">Fecha inicio</Label>
+                <Input
+                  id="snap-from"
+                  type="date"
+                  value={snapshotDateFrom}
+                  onChange={(e) => setSnapshotDateFrom(e.target.value)}
+                />
+              </div>
+              <div className="flex flex-1 flex-col gap-2">
+                <Label htmlFor="snap-to">Fecha fin</Label>
+                <Input
+                  id="snap-to"
+                  type="date"
+                  value={snapshotDateTo}
+                  onChange={(e) => setSnapshotDateTo(e.target.value)}
+                />
+              </div>
             </div>
           </div>
           <DialogFooter>
