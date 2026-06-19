@@ -1,7 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Plus, Pencil, Trash2, Check, X } from "lucide-react"
+import Link from "next/link"
+import { Plus, Pencil, Trash2, Check, X, Network, Eye } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,6 +25,7 @@ import {
   formatAmount,
 } from "@/lib/finance"
 import { useSettings } from "@/components/settings-store"
+import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
 
 // ── Amount display helpers ────────────────────────────────────────────────────
 
@@ -105,6 +107,10 @@ interface DashboardSheetProps {
   onCreate?: (record: FinancialRecord) => void
   onEdit?: (record: FinancialRecord, previous: FinancialRecord) => void
   onDelete?: (record: FinancialRecord) => void
+  onGroupAdjust?: (record: FinancialRecord, previous: FinancialRecord) => void
+  onBreakdown?: (record: FinancialRecord) => void
+  onDeleteWithComment?: (record: FinancialRecord, comment: string) => void
+  onEditAmountWithComment?: (record: FinancialRecord, previous: FinancialRecord, comment: string) => void
 }
 
 function CurrencySelect({
@@ -144,6 +150,10 @@ interface SectionTableProps {
   onCreate?: (record: FinancialRecord) => void
   onEdit?: (record: FinancialRecord, previous: FinancialRecord) => void
   onDelete?: (record: FinancialRecord) => void
+  onGroupAdjust?: (record: FinancialRecord, previous: FinancialRecord) => void
+  onBreakdown?: (record: FinancialRecord) => void
+  onDeleteWithComment?: (record: FinancialRecord, comment: string) => void
+  onEditAmountWithComment?: (record: FinancialRecord, previous: FinancialRecord, comment: string) => void
 }
 
 function SectionTable({
@@ -158,10 +168,20 @@ function SectionTable({
   onCreate,
   onEdit,
   onDelete,
+  onGroupAdjust,
+  onBreakdown,
+  onDeleteWithComment,
+  onEditAmountWithComment,
 }: SectionTableProps) {
   const [newRows, setNewRows] = useState<DraftRow[]>([])
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<DraftRow | null>(null)
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [pendingDelete, setPendingDelete] = useState<FinancialRecord | null>(null)
+  const [pendingEdit, setPendingEdit] = useState<{
+    record: FinancialRecord
+    previous: FinancialRecord
+  } | null>(null)
 
   const linkOptions = linkType
     ? allRecords.filter((r) => r.type === linkType)
@@ -206,6 +226,7 @@ function SectionTable({
 
   const startEdit = (record: FinancialRecord) => {
     setEditingId(record.id)
+    setNameError(null)
     setEditDraft({
       id: record.id,
       name: record.name,
@@ -218,28 +239,66 @@ function SectionTable({
   const cancelEdit = () => {
     setEditingId(null)
     setEditDraft(null)
+    setNameError(null)
   }
 
   const saveEdit = (previous: FinancialRecord) => {
     if (!editDraft || !editDraft.name || !editDraft.amount) return
-    onEdit?.(
-      {
-        id: previous.id,
-        type,
-        name: editDraft.name,
-        amount: Number.parseFloat(editDraft.amount),
-        currency: editDraft.currency,
-        linkedTo:
-          editDraft.linkedTo && editDraft.linkedTo !== "none"
-            ? editDraft.linkedTo
-            : undefined,
-      },
-      previous,
-    )
+
+    // Validate name uniqueness for activos
+    if (type === "activo" && editDraft.name !== previous.name) {
+      const duplicate = allRecords.some(
+        (r) => r.type === "activo" && r.id !== previous.id && r.name === editDraft.name,
+      )
+      if (duplicate) {
+        setNameError(`Ya existe un activo con el nombre "${editDraft.name}"`)
+        return
+      }
+    }
+
+    const updated: FinancialRecord = {
+      id: previous.id,
+      type,
+      name: editDraft.name,
+      amount: Number.parseFloat(editDraft.amount),
+      currency: editDraft.currency,
+      linkedTo:
+        editDraft.linkedTo && editDraft.linkedTo !== "none"
+          ? editDraft.linkedTo
+          : undefined,
+      parentId: previous.parentId,
+      assetType: previous.assetType,
+      isGroupParent: previous.isGroupParent,
+    }
+
+    const amountChanged = updated.amount !== previous.amount
+
+    // For activos with amount change: show comment dialog
+    if (type === "activo" && amountChanged && onEditAmountWithComment) {
+      setPendingEdit({ record: updated, previous })
+      cancelEdit()
+      return
+    }
+
+    // For group parent amount change
+    if (previous.isGroupParent && onGroupAdjust && amountChanged) {
+      onGroupAdjust(updated, previous)
+    } else {
+      onEdit?.(updated, previous)
+    }
     cancelEdit()
   }
 
+  const handleDeleteClick = (record: FinancialRecord) => {
+    if (type === "activo" && onDeleteWithComment) {
+      setPendingDelete(record)
+    } else {
+      onDelete?.(record)
+    }
+  }
+
   const hasLink = Boolean(linkType)
+  const isActivo = type === "activo"
 
   return (
     <div className="border-2 border-black">
@@ -269,74 +328,80 @@ function SectionTable({
             {linkLabel}
           </div>
         )}
-        {!readOnly && <div className="w-14 px-1 py-1 text-center">Acción</div>}
+        {!readOnly && <div className="w-16 px-1 py-1 text-center">Acción</div>}
       </div>
 
       {/* Existing records */}
       {records.map((record) =>
         editingId === record.id && editDraft ? (
-          <div key={record.id} className="flex border-b border-black text-sm">
-            <div className="flex-1 border-r border-black px-1 py-0.5">
-              <Input
-                value={editDraft.name}
-                onChange={(e) =>
-                  setEditDraft({ ...editDraft, name: e.target.value })
-                }
-                className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
-              />
-            </div>
-            <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
-              <Input
-                type="number"
-                value={editDraft.amount}
-                onChange={(e) =>
-                  setEditDraft({ ...editDraft, amount: e.target.value })
-                }
-                className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
-              />
-              <CurrencySelect
-                value={editDraft.currency}
-                onChange={(v) => setEditDraft({ ...editDraft, currency: v })}
-              />
-            </div>
-            {hasLink && (
-              <div className="flex w-24 items-center px-1 py-0.5">
-                <Select
-                  value={editDraft.linkedTo}
-                  onValueChange={(v) =>
-                    setEditDraft({ ...editDraft, linkedTo: v })
-                  }
-                >
-                  <SelectTrigger className="h-6 w-full border-0 bg-transparent p-0 text-xs shadow-none focus:ring-0">
-                    <SelectValue placeholder="—" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">—</SelectItem>
-                    {linkOptions.map((o) => (
-                      <SelectItem key={o.id} value={o.id}>
-                        {o.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+          <div key={record.id} className="flex flex-col border-b border-black text-sm">
+            <div className="flex">
+              <div className="flex-1 border-r border-black px-1 py-0.5">
+                <Input
+                  value={editDraft.name}
+                  onChange={(e) => {
+                    setEditDraft({ ...editDraft, name: e.target.value })
+                    setNameError(null)
+                  }}
+                  className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+                />
               </div>
-            )}
-            <div className="flex w-14 items-center justify-center gap-1 px-1">
-              <button
-                onClick={() => saveEdit(record)}
-                className="text-emerald-700 hover:text-emerald-900"
-                aria-label="Guardar"
-              >
-                <Check className="h-4 w-4" />
-              </button>
-              <button
-                onClick={cancelEdit}
-                className="text-gray-500 hover:text-black"
-                aria-label="Cancelar"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
+                <Input
+                  type="number"
+                  value={editDraft.amount}
+                  onChange={(e) =>
+                    setEditDraft({ ...editDraft, amount: e.target.value })
+                  }
+                  className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
+                />
+                <CurrencySelect
+                  value={editDraft.currency}
+                  onChange={(v) => setEditDraft({ ...editDraft, currency: v })}
+                />
+              </div>
+              {hasLink && (
+                <div className="flex w-24 items-center px-1 py-0.5">
+                  <Select
+                    value={editDraft.linkedTo}
+                    onValueChange={(v) =>
+                      setEditDraft({ ...editDraft, linkedTo: v })
+                    }
+                  >
+                    <SelectTrigger className="h-6 w-full border-0 bg-transparent p-0 text-xs shadow-none focus:ring-0">
+                      <SelectValue placeholder="—" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">—</SelectItem>
+                      {linkOptions.map((o) => (
+                        <SelectItem key={o.id} value={o.id}>
+                          {o.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              <div className="flex w-16 items-center justify-center gap-1 px-1">
+                <button
+                  onClick={() => saveEdit(record)}
+                  className="text-emerald-700 hover:text-emerald-900"
+                  aria-label="Guardar"
+                >
+                  <Check className="h-4 w-4" />
+                </button>
+                <button
+                  onClick={cancelEdit}
+                  className="text-gray-500 hover:text-black"
+                  aria-label="Cancelar"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
             </div>
+            {nameError && (
+              <div className="px-2 py-1 text-xs text-rose-600">{nameError}</div>
+            )}
           </div>
         ) : (
           <div
@@ -355,7 +420,25 @@ function SectionTable({
               </div>
             )}
             {!readOnly && (
-              <div className="flex w-14 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+                {isActivo && (
+                  <Link
+                    href={`/activos/${record.id}`}
+                    className="text-gray-500 hover:text-black"
+                    aria-label="Ver activo"
+                  >
+                    <Eye className="h-3.5 w-3.5" />
+                  </Link>
+                )}
+                {record.isGroupParent && (
+                  <button
+                    onClick={() => onBreakdown?.(record)}
+                    className="text-gray-500 hover:text-black"
+                    aria-label="Ver desglose"
+                  >
+                    <Network className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   onClick={() => startEdit(record)}
                   className="text-gray-500 hover:text-black"
@@ -364,7 +447,7 @@ function SectionTable({
                   <Pencil className="h-3.5 w-3.5" />
                 </button>
                 <button
-                  onClick={() => onDelete?.(record)}
+                  onClick={() => handleDeleteClick(record)}
                   className="text-gray-500 hover:text-rose-700"
                   aria-label="Eliminar"
                 >
@@ -424,7 +507,7 @@ function SectionTable({
                 </Select>
               </div>
             )}
-            <div className="flex w-14 items-center justify-center gap-1 px-1">
+            <div className="flex w-16 items-center justify-center gap-1 px-1">
               <button
                 onClick={() => saveNewRow(row)}
                 className="text-emerald-700 hover:text-emerald-900"
@@ -452,6 +535,34 @@ function SectionTable({
           <TotalsBlock records={records} className="text-right" />
         </div>
       </div>
+
+      {/* Delete confirmation dialog */}
+      {pendingDelete && (
+        <ConfirmWithCommentDialog
+          open={!!pendingDelete}
+          onOpenChange={(o) => !o && setPendingDelete(null)}
+          title="Poner activo en cero"
+          description={`El valor de "${pendingDelete.name}" pasará a 0. El activo no se elimina.`}
+          onConfirm={(comment) => {
+            onDeleteWithComment?.(pendingDelete, comment)
+            setPendingDelete(null)
+          }}
+        />
+      )}
+
+      {/* Edit amount confirmation dialog */}
+      {pendingEdit && (
+        <ConfirmWithCommentDialog
+          open={!!pendingEdit}
+          onOpenChange={(o) => !o && setPendingEdit(null)}
+          title="Cambiar valor del activo"
+          description={`Nuevo valor: ${formatAmount(pendingEdit.record.amount, pendingEdit.record.currency)} ${pendingEdit.record.currency}`}
+          onConfirm={(comment) => {
+            onEditAmountWithComment?.(pendingEdit.record, pendingEdit.previous, comment)
+            setPendingEdit(null)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -464,13 +575,18 @@ export function DashboardSheet({
   onCreate,
   onEdit,
   onDelete,
+  onGroupAdjust,
+  onBreakdown,
+  onDeleteWithComment,
+  onEditAmountWithComment,
 }: DashboardSheetProps) {
   const { settings } = useSettings()
   const { convertCurrencies, baseCurrency, exchangeRates } = settings
 
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
-  const activos = records.filter((r) => r.type === "activo")
+  // Exclude child assets (parentId set) and zero-value assets
+  const activos = records.filter((r) => r.type === "activo" && !r.parentId && r.amount !== 0)
   const pasivos = records.filter((r) => r.type === "pasivo")
 
   // ── Auditor values ──────────────────────────────────────────────────────────
@@ -617,6 +733,10 @@ export function DashboardSheet({
             onCreate={onCreate}
             onEdit={onEdit}
             onDelete={onDelete}
+            onGroupAdjust={onGroupAdjust}
+            onBreakdown={onBreakdown}
+            onDeleteWithComment={onDeleteWithComment}
+            onEditAmountWithComment={onEditAmountWithComment}
           />
           <SectionTable
             title="Obligaciones"

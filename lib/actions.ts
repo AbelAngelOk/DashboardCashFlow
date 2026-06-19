@@ -61,6 +61,7 @@ export async function loadData(): Promise<{
   const [dbRecords, dbSnapshots, dbMovements] = await Promise.all([
     prisma.record.findMany({
       where: { userId, deletedAt: null },
+      include: { _count: { select: { children: true } } },
     }),
     prisma.snapshot.findMany({
       where: { userId },
@@ -81,6 +82,9 @@ export async function loadData(): Promise<{
       amount: Number(r.amount),
       currency: r.currency as Currency,
       ...(r.linkedTo ? { linkedTo: r.linkedTo } : {}),
+      ...(r.parentId ? { parentId: r.parentId } : {}),
+      ...(r.assetType ? { assetType: r.assetType } : {}),
+      ...("_count" in r && r._count.children > 0 ? { isGroupParent: true } : {}),
     })),
     snapshots: dbSnapshots.map((s) => ({
       id: s.id,
@@ -124,6 +128,8 @@ export async function dbCreateRecord(
         amount: record.amount,
         currency: record.currency,
         linkedTo: record.linkedTo ?? null,
+        parentId: record.parentId ?? null,
+        assetType: record.assetType ?? null,
         userId,
       },
     }),
@@ -157,6 +163,8 @@ export async function dbEditRecord(
         amount: record.amount,
         currency: record.currency,
         linkedTo: record.linkedTo ?? null,
+        parentId: record.parentId ?? null,
+        assetType: record.assetType ?? null,
       },
     }),
     prisma.auditLog.create({

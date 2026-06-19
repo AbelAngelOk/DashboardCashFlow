@@ -1,0 +1,343 @@
+# 03 — Modelo de Datos
+
+## Fuente
+
+Archivo: `prisma/schema.prisma`
+
+Base de datos: PostgreSQL (Supabase)
+
+---
+
+## Diagrama de relaciones (texto)
+
+```
+users
+  ├──< records (userId)
+  ├──< snapshots (userId)
+  ├──< financial_movements (userId)
+  ├──< audit_logs / movements (userId)
+  └──< groups (userId)
+
+records
+  ├──< records (parentId → self-referencia para grupos)
+  ├──< financial_movements (recordId)
+  ├──< audit_logs (recordId)
+  └──< record_groups (recordId)
+
+snapshots
+  └──< snapshot_records (snapshotId)
+
+groups
+  └──< record_groups (groupId)
+
+record_groups [tabla pivote]
+  ├── recordId → records
+  └── groupId  → groups
+```
+
+---
+
+## Tabla: `users`
+
+Modelo Prisma: `User`
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | ID generado automáticamente |
+| `name` | String | No | Nombre del usuario |
+| `email` | String (UNIQUE) | No | Email, usado como identificador de login |
+| `password_hash` | String | No | Hash bcrypt de la contraseña |
+| `created_at` | DateTime | No | Fecha de creación (default: now()) |
+| `updated_at` | DateTime | No | Fecha de última modificación (auto-update) |
+
+**Índices**: `email` (unique)
+
+---
+
+## Tabla: `records`
+
+Modelo Prisma: `Record`
+
+Tabla polimórfica: alberga tanto registros financieros simples (ingresos, gastos, pasivos) como activos financieros complejos.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | String (PK) | No | UUID generado por el cliente |
+| `type` | String | No | `"activo"` \| `"pasivo"` \| `"ingreso"` \| `"gasto"` |
+| `name` | String | No | Nombre/descripción del registro |
+| `amount` | Decimal | No | Monto en la moneda del registro |
+| `currency` | String | No | Código de moneda: `USD`, `EUR`, `MXN`, `ARS`, `USDT` |
+| `linked_to` | String? | Sí | ID de otro record al que está vinculado (ej: ingreso → activo) |
+| `user_id` | String? | Sí | FK a `users.id`. Nullable para datos legados |
+| `description` | String? | Sí | Descripción larga (usado principalmente en activos) |
+| `operation_date` | DateTime? | Sí | Fecha de la operación (usado principalmente en activos) |
+| `deleted_at` | DateTime? | Sí | Timestamp de soft delete (null = activo) |
+| `asset_type` | String? | Sí | Tipo de activo: `STOCK`, `CRYPTO`, `FUTURES`, `OPTIONS`, `REBALANCE_BOT`, `TRADING_BOT`, `TRADING`, `FIXED_TERM`, `BOND` |
+| `ticker` | String? | Sí | Código de cotización (ej: AAPL, BTCUSDT) |
+| `current_quantity` | Decimal(18,8)? | Sí | Cantidad actual de unidades (acciones, crypto, etc.) |
+| `avg_buy_price` | Decimal(18,4)? | Sí | Precio promedio de compra ponderado |
+| `parent_id` | String? | Sí | FK auto-referencia a `records.id` para agrupación |
+| `metadata` | Json? | Sí | Objeto JSON con datos tipo-específicos del activo (ver más abajo) |
+
+**Índices**:
+- `(user_id)` — para filtrar por usuario
+- `(user_id, type)` — para filtrar activos/pasivos/ingresos/gastos por usuario
+
+**Relaciones**:
+- `user` → `users` (N:1)
+- `parent` → `records` (self, N:1) — padre del grupo
+- `children` → `records[]` (self, 1:N) — hijos del grupo
+- `financialMovements` → `financial_movements[]`
+- `auditLogs` → `audit_logs[]`
+- `groups` → `record_groups[]`
+
+### Campo `metadata` por tipo de activo
+
+El campo `metadata` es un JSON libre. Su estructura varía según `asset_type`:
+
+**STOCK**:
+```json
+{
+  "dividends": [
+    {
+      "id": "uuid",
+      "month": "YYYY-MM",
+      "percentage": 5.2,
+      "estimatedGain": 100.0,
+      "actualGain": 98.5,
+      "ingresoRecordId": "uuid"
+    }
+  ]
+}
+```
+
+**FIXED_TERM**:
+```json
+{
+  "startDate": "2024-01-01",
+  "endDate": "2024-07-01",
+  "rate": 45.5,
+  "collected": false,
+  "ingresoRecordId": null
+}
+```
+
+**BOND**:
+```json
+{
+  "disbursements": [
+    {
+      "id": "uuid",
+      "dueDate": "2024-06-01",
+      "amount": 500.0,
+      "currency": "USD",
+      "collected": false
+    }
+  ]
+}
+```
+
+**TRADING_BOT**:
+```json
+{
+  "totalInvested": 10000.0,
+  "totalGained": 3500.0,
+  "totalLost": 800.0,
+  "totalExtracted": 1200.0,
+  "currency": "USDT"
+}
+```
+
+**REBALANCE_BOT**:
+```json
+{
+  "assets": [
+    {
+      "id": "uuid",
+      "name": "Bitcoin",
+      "ticker": "BTC",
+      "invested": 5000.0,
+      "currentPrice": 62000.0,
+      "initialQty": 0.08,
+      "currentQty": 0.075,
+      "currency": "USD"
+    }
+  ]
+}
+```
+
+**TRADING**:
+```json
+{
+  "totalInvested": 5000.0,
+  "totalObtained": 5800.0,
+  "currency": "USD"
+}
+```
+
+**FUTURES** (metadata a nivel de movimiento individual):
+```json
+{
+  "positionType": "LONG"
+}
+```
+
+**Nota**: El campo `metadata` también puede contener una clave `tracking` (tabla de seguimiento configurable):
+```json
+{
+  "tracking": {
+    "columns": [
+      { "id": "uuid", "name": "Observación", "type": "text" }
+    ],
+    "rows": [
+      { "id": "uuid", "cells": { "uuid": "valor" } }
+    ]
+  }
+}
+```
+
+---
+
+## Tabla: `snapshots`
+
+Modelo Prisma: `Snapshot`
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | String (PK) | No | UUID generado por el cliente |
+| `name` | String | No | Nombre del snapshot (ej: "Cierre Enero 2025") |
+| `period` | String | No | Período en texto libre (ej: "01/01/2025 - 31/01/2025") |
+| `created_at` | String | No | Fecha/hora de creación formateada en español (legado, no DateTime) |
+| `user_id` | String? | Sí | FK a `users.id`. Nullable para datos legados |
+| `start_date` | DateTime? | Sí | Fecha inicio del período (actualmente no utilizado en la UI) |
+| `end_date` | DateTime? | Sí | Fecha fin del período (actualmente no utilizado en la UI) |
+| `data` | Json? | Sí | Estado consolidado (campo para Fase 4, actualmente no utilizado) |
+
+**Índices**: `(user_id)`
+
+**Notas**:
+- `created_at` es un `String` y no un `DateTime`, lo que es un dato legado. No puede ordenarse con funciones de fecha de PostgreSQL de forma nativa.
+- Los campos `start_date`, `end_date`, y `data` existen en el schema pero no se usan en el código actual.
+
+---
+
+## Tabla: `snapshot_records`
+
+Modelo Prisma: `SnapshotRecord`
+
+Copia plana de los records en el momento del snapshot.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | String (PK) | No | UUID generado al crear el snapshot |
+| `snapshot_id` | String | No | FK a `snapshots.id` (cascade delete) |
+| `type` | String | No | Tipo de registro |
+| `name` | String | No | Nombre del registro |
+| `amount` | Decimal | No | Monto en la moneda |
+| `currency` | String | No | Moneda |
+| `linked_to` | String? | Sí | ID del registro vinculado |
+
+**Índices**: `(snapshot_id)`
+
+**Restricciones**: `ON DELETE CASCADE` desde `snapshots`
+
+**Notas**: No incluye `assetType`, `parentId`, ni `metadata`. Es una vista congelada básica del Balance/Estado de Resultados.
+
+---
+
+## Tabla: `movements` (AuditLog)
+
+Modelo Prisma: `AuditLog`
+
+Log de auditoría de operaciones sobre records del dashboard.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | String (PK) | No | UUID generado por el cliente |
+| `date` | String | No | Fecha/hora en español (ej: "19/06/2026, 14:30") |
+| `action` | String | No | `"creado"` \| `"editado"` \| `"eliminado"` |
+| `record_type` | String | No | Tipo del record afectado |
+| `record_name` | String | No | Nombre del record afectado |
+| `detail` | String | No | Descripción textual del cambio |
+| `comment` | String | No | Comentario del usuario (default: `""`) |
+| `user_id` | String? | Sí | FK a `users.id` |
+| `record_id` | String? | Sí | FK a `records.id` |
+
+**Índices**: `(user_id)`
+
+**Notas**:
+- `date` es String, no DateTime. No puede ordenarse nativamente con funciones de fecha.
+- La tabla se llama `movements` en la DB pero `AuditLog` en Prisma, y `Movement` en el código TypeScript. Existe una ambigüedad de nomenclatura entre este log de auditoría y los `FinancialMovement` de activos.
+
+---
+
+## Tabla: `financial_movements`
+
+Modelo Prisma: `FinancialMovement`
+
+Historial de operaciones financieras sobre activos (compras, ventas, dividendos, etc.).
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `user_id` | String | No | FK a `users.id` |
+| `record_id` | String | No | FK a `records.id` |
+| `movement_type` | String | No | `BUY` \| `SELL` \| `DIVIDEND` \| `FEE` \| `COLLECT` \| `ADJUSTMENT` \| `EXTRACT` \| `DEPOSIT` |
+| `amount` | Decimal(18,4) | No | Monto de la operación |
+| `quantity` | Decimal(18,8)? | Sí | Cantidad de unidades |
+| `unit_price` | Decimal(18,4)? | Sí | Precio unitario |
+| `currency` | String | No | Moneda de la operación |
+| `exchange_rate` | Decimal(18,6)? | Sí | Tipo de cambio aplicado |
+| `description` | String? | Sí | Descripción libre de la operación |
+| `operation_date` | DateTime | No | Fecha de la operación (default: now()) |
+| `created_at` | DateTime | No | Timestamp de inserción |
+| `metadata` | Json? | Sí | Datos adicionales (ej: `positionType` para FUTURES) |
+
+**Índices**:
+- `(user_id, operation_date)` — para queries temporales por usuario
+- `(record_id)` — para queries por activo
+
+---
+
+## Tabla: `groups`
+
+Modelo Prisma: `Group`
+
+Agrupación lógica de records (actualmente parece poco usada en la UI).
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | |
+| `user_id` | String | No | FK a `users.id` |
+| `name` | String | No | Nombre del grupo |
+| `group_type` | String | No | `ASSET` \| `INCOME` \| `EXPENSE` \| `LIABILITY` |
+| `created_at` | DateTime | No | |
+
+---
+
+## Tabla: `record_groups`
+
+Modelo Prisma: `RecordGroup`
+
+Tabla pivote entre `records` y `groups`.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `record_id` | String | No | FK a `records.id` (cascade delete) |
+| `group_id` | String | No | FK a `groups.id` (cascade delete) |
+
+**PK compuesta**: `(record_id, group_id)`
+
+---
+
+## Consideraciones del modelo
+
+1. **Tabla polimórfica `records`**: Una sola tabla alberga todos los tipos de registros (simples y complejos). Simplifica el esquema pero mezcla columnas que solo tienen sentido para activos (`ticker`, `current_quantity`, `avg_buy_price`, `metadata`) con registros simples (ingresos, gastos).
+
+2. **Campos `String` donde debería ser `DateTime`**: Los campos `date` en `AuditLog` y `created_at` en `Snapshot` son strings formateados en español. Esto impide ordenar y filtrar por fecha eficientemente en la DB.
+
+3. **FK `userId` nullable en `records`, `snapshots`, `AuditLog`**: Es un remanente de la migración inicial (antes de que existiera autenticación). Todos los nuevos registros tendrán `userId`.
+
+4. **Sin constraints de unicidad sobre nombre de activos**: La validación de nombre único de activos es solo client-side.
+
+5. **Tabla `Groups` y `RecordGroups`**: Presente en el schema pero la funcionalidad de agrupación en la UI usa directamente `parentId` en `records`, no estas tablas. `Groups`/`RecordGroups` parece ser una implementación alternativa o un vestigio no activo.

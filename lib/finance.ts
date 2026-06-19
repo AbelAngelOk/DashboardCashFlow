@@ -8,6 +8,9 @@ export interface FinancialRecord {
   amount: number
   currency: Currency
   linkedTo?: string
+  parentId?: string
+  assetType?: string
+  isGroupParent?: boolean
 }
 
 export interface Snapshot {

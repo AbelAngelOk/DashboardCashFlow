@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
-import { LayoutDashboard, Camera, History, LogOut, Settings2 } from "lucide-react"
+import { LayoutDashboard, Camera, History, LogOut, Settings2, TrendingUp } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useFinance } from "@/components/finance-store"
 
@@ -20,6 +20,12 @@ export function AppSidebar() {
       href: "/",
       label: "Dashboard",
       icon: LayoutDashboard,
+      badge: undefined as number | undefined,
+    },
+    {
+      href: "/activos",
+      label: "Activos",
+      icon: TrendingUp,
       badge: undefined as number | undefined,
     },
     {

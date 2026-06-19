@@ -15,12 +15,45 @@ import {
 } from "@/components/ui/dialog"
 import { DashboardSheet } from "@/components/dashboard-sheet"
 import { useFinance, currentPeriod } from "@/components/finance-store"
+import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialog"
+import { createAdjustmentMovement } from "@/lib/assets-actions"
+import type { FinancialRecord } from "@/lib/finance"
 
 export default function DashboardPage() {
   const { records, snapshots, createRecord, editRecord, deleteRecord, takeSnapshot } =
     useFinance()
 
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
+  const [breakdownRecord, setBreakdownRecord] = useState<FinancialRecord | null>(null)
+
+  const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
+    editRecord(record, previous)
+    const diff = record.amount - previous.amount
+    createAdjustmentMovement(record.id, diff, record.currency).catch(console.error)
+  }
+
+  const handleActivoDelete = (record: FinancialRecord) => {
+    deleteRecord(record)
+  }
+
+  const handleActivoEditAmount = (
+    record: FinancialRecord,
+    previous: FinancialRecord,
+    comment: string,
+  ) => {
+    if (record.isGroupParent) {
+      handleGroupAdjust(record, previous)
+    } else {
+      editRecord(record, previous)
+      const diff = record.amount - previous.amount
+      createAdjustmentMovement(
+        record.id,
+        diff,
+        record.currency,
+        comment || undefined,
+      ).catch(console.error)
+    }
+  }
   const [snapshotName, setSnapshotName] = useState("")
   const [snapshotDateFrom, setSnapshotDateFrom] = useState("")
   const [snapshotDateTo, setSnapshotDateTo] = useState("")
@@ -72,7 +105,19 @@ export default function DashboardPage() {
         onCreate={createRecord}
         onEdit={editRecord}
         onDelete={deleteRecord}
+        onGroupAdjust={handleGroupAdjust}
+        onBreakdown={setBreakdownRecord}
+        onDeleteWithComment={handleActivoDelete}
+        onEditAmountWithComment={handleActivoEditAmount}
       />
+
+      {breakdownRecord && (
+        <GroupBreakdownDialog
+          parentRecord={breakdownRecord}
+          allRecords={records}
+          onClose={() => setBreakdownRecord(null)}
+        />
+      )}
 
       <Dialog open={snapshotDialogOpen} onOpenChange={setSnapshotDialogOpen}>
         <DialogContent>

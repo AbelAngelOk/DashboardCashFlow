@@ -2,6 +2,7 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useRef,
@@ -23,6 +24,7 @@ import {
   dbUpdateComment,
   loadData,
 } from "@/lib/actions"
+import { toast } from "@/components/ui/use-toast"
 
 function now() {
   return new Date().toLocaleString("es-ES", {
@@ -42,7 +44,17 @@ export function currentPeriod() {
 }
 
 function fire(p: Promise<unknown>) {
-  p.catch(console.error)
+  p.catch((err: unknown) => {
+    console.error(err)
+    const message = err instanceof Error ? err.message : ""
+    toast({
+      title: "Error al guardar",
+      description: message.includes("No autorizado")
+        ? "Tu sesión expiró. Recargá la página para volver a ingresar."
+        : "No se pudo guardar el cambio. Comprobá tu conexión.",
+      variant: "destructive",
+    })
+  })
 }
 
 interface FinanceContextValue {
@@ -56,6 +68,7 @@ interface FinanceContextValue {
   takeSnapshot: (name: string, period: string) => void
   updateComment: (id: string, comment: string) => void
   getSnapshot: (id: string) => Snapshot | undefined
+  reload: () => void
 }
 
 const FinanceContext = createContext<FinanceContextValue | null>(null)
@@ -170,6 +183,16 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
 
   const getSnapshot = (id: string) => snapshots.find((s) => s.id === id)
 
+  const reload = useCallback(() => {
+    loadData()
+      .then((data) => {
+        setRecords(data.records)
+        setSnapshots(data.snapshots)
+        setMovements(data.movements)
+      })
+      .catch(console.error)
+  }, [])
+
   return (
     <FinanceContext.Provider
       value={{
@@ -183,6 +206,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         takeSnapshot,
         updateComment,
         getSnapshot,
+        reload,
       }}
     >
       {children}

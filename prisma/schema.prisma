@@ -27,11 +27,15 @@ model Record {
   ticker        String?
   currentQty    Decimal?  @map("current_quantity") @db.Decimal(18, 8)
   avgBuyPrice   Decimal?  @map("avg_buy_price")    @db.Decimal(18, 4)
+  parentId      String?   @map("parent_id")
+  metadata      Json?
 
   user               User?               @relation(fields: [userId], references: [id])
   groups             RecordGroup[]
   financialMovements FinancialMovement[]
   auditLogs          AuditLog[]
+  parent             Record?             @relation("RecordChildren", fields: [parentId], references: [id])
+  children           Record[]            @relation("RecordChildren")
 
   @@map("records")
   @@index([userId])
@@ -126,6 +130,7 @@ model FinancialMovement {
   description   String?
   operationDate DateTime @map("operation_date") @default(now())
   createdAt     DateTime @default(now())        @map("created_at")
+  metadata      Json?
 
   user   User   @relation(fields: [userId], references: [id])
   record Record @relation(fields: [recordId], references: [id])
