@@ -74,7 +74,7 @@ export function BondPanel({ asset }: BondPanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div data-testid="asset-panel-bond" className="flex flex-col gap-6">
       {/* Info header */}
       <div className="border-2 border-black">
         <div className="border-b-2 border-black bg-black px-3 py-2">

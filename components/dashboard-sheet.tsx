@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Plus, Pencil, Trash2, Check, X, Network, Eye } from "lucide-react"
+import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,8 +24,10 @@ import {
   defaultCurrency,
   formatAmount,
 } from "@/lib/finance"
+import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { useSettings } from "@/components/settings-store"
-import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
+import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 
 // ── Amount display helpers ────────────────────────────────────────────────────
 
@@ -101,6 +103,8 @@ interface DraftRow {
   linkedTo: string
 }
 
+export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT"
+
 interface DashboardSheetProps {
   records: FinancialRecord[]
   readOnly?: boolean
@@ -109,8 +113,14 @@ interface DashboardSheetProps {
   onDelete?: (record: FinancialRecord) => void
   onGroupAdjust?: (record: FinancialRecord, previous: FinancialRecord) => void
   onBreakdown?: (record: FinancialRecord) => void
-  onDeleteWithComment?: (record: FinancialRecord, comment: string) => void
-  onEditAmountWithComment?: (record: FinancialRecord, previous: FinancialRecord, comment: string) => void
+  onDeleteWithComment?: (record: FinancialRecord, comment: string, createIngreso: boolean) => void
+  onEditAmountWithComment?: (
+    record: FinancialRecord,
+    previous: FinancialRecord,
+    comment: string,
+    movementType: DashboardMovementType,
+    createGasto: boolean,
+  ) => void
 }
 
 function CurrencySelect({
@@ -152,8 +162,14 @@ interface SectionTableProps {
   onDelete?: (record: FinancialRecord) => void
   onGroupAdjust?: (record: FinancialRecord, previous: FinancialRecord) => void
   onBreakdown?: (record: FinancialRecord) => void
-  onDeleteWithComment?: (record: FinancialRecord, comment: string) => void
-  onEditAmountWithComment?: (record: FinancialRecord, previous: FinancialRecord, comment: string) => void
+  onDeleteWithComment?: (record: FinancialRecord, comment: string, createIngreso: boolean) => void
+  onEditAmountWithComment?: (
+    record: FinancialRecord,
+    previous: FinancialRecord,
+    comment: string,
+    movementType: DashboardMovementType,
+    createGasto: boolean,
+  ) => void
 }
 
 function SectionTable({
@@ -178,10 +194,16 @@ function SectionTable({
   const [editDraft, setEditDraft] = useState<DraftRow | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
   const [pendingDelete, setPendingDelete] = useState<FinancialRecord | null>(null)
+  const [deleteComment, setDeleteComment] = useState("")
+  const [deleteCreateIngreso, setDeleteCreateIngreso] = useState(false)
   const [pendingEdit, setPendingEdit] = useState<{
     record: FinancialRecord
     previous: FinancialRecord
   } | null>(null)
+  const [editComment, setEditComment] = useState("")
+  const [editMovementType, setEditMovementType] = useState<DashboardMovementType>("ADJUSTMENT")
+  const [editCreateGasto, setEditCreateGasto] = useState(false)
+  const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
 
   const linkOptions = linkType
     ? allRecords.filter((r) => r.type === linkType)
@@ -191,6 +213,18 @@ function SectionTable({
     if (!id) return "—"
     return allRecords.find((r) => r.id === id)?.name || "—"
   }
+
+  const toggleGroup = (id: string) => {
+    setExpandedGroupIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const getGroupChildren = (parentId: string) =>
+    allRecords.filter((r) => r.parentId === parentId)
+
 
   const emptyDraft = (): DraftRow => ({
     id: crypto.randomUUID(),
@@ -300,8 +334,22 @@ function SectionTable({
   const hasLink = Boolean(linkType)
   const isActivo = type === "activo"
 
+  // For activos: show only top-level (no parentId); children shown inline when group expanded
+  const displayRecords = isActivo
+    ? records.filter((r) => !r.parentId)
+    : records
+
+  const testId =
+    type === "ingreso"
+      ? "dashboard-income-table"
+      : type === "gasto"
+        ? "dashboard-expense-table"
+        : type === "activo"
+          ? "dashboard-assets-table"
+          : "dashboard-liabilities-table"
+
   return (
-    <div className="border-2 border-black">
+    <div data-testid={testId} className="border-2 border-black">
       <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
         <span className="font-bold italic text-white">{title}</span>
         {!readOnly && (
@@ -332,7 +380,7 @@ function SectionTable({
       </div>
 
       {/* Existing records */}
-      {records.map((record) =>
+      {displayRecords.map((record) =>
         editingId === record.id && editDraft ? (
           <div key={record.id} className="flex flex-col border-b border-black text-sm">
             <div className="flex">
@@ -404,57 +452,116 @@ function SectionTable({
             )}
           </div>
         ) : (
-          <div
-            key={record.id}
-            className="group flex border-b border-black text-sm"
-          >
-            <div className="flex-1 border-r border-black px-2 py-1">
-              {record.name}
-            </div>
-            <div className="w-36 border-r border-black px-2 py-1 text-right">
-              <RecordAmount record={record} />
-            </div>
-            {hasLink && (
-              <div className="w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500">
-                {getLinkedName(record.linkedTo)}
+          <div key={record.id}>
+            {/* Main row */}
+            <div
+              className={`group flex border-b border-black text-sm ${record.isGroupParent ? "bg-gray-50" : ""}`}
+            >
+              <div className="flex-1 border-r border-black px-2 py-1">
+                <div className="flex items-center gap-1">
+                  {record.isGroupParent && (
+                    <button
+                      onClick={() => toggleGroup(record.id)}
+                      className="shrink-0 text-gray-400 hover:text-black"
+                      aria-label={expandedGroupIds.has(record.id) ? "Colapsar" : "Expandir"}
+                    >
+                      {expandedGroupIds.has(record.id) ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                  <span className={record.isGroupParent ? "font-semibold" : ""}>
+                    {record.name}
+                  </span>
+                  {record.isGroupParent && (
+                    <Network className="h-3 w-3 shrink-0 text-gray-300" />
+                  )}
+                </div>
               </div>
-            )}
-            {!readOnly && (
-              <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-                {isActivo && (
-                  <Link
-                    href={`/activos/${record.id}`}
-                    className="text-gray-500 hover:text-black"
-                    aria-label="Ver activo"
-                  >
-                    <Eye className="h-3.5 w-3.5" />
-                  </Link>
-                )}
-                {record.isGroupParent && (
-                  <button
-                    onClick={() => onBreakdown?.(record)}
-                    className="text-gray-500 hover:text-black"
-                    aria-label="Ver desglose"
-                  >
-                    <Network className="h-3.5 w-3.5" />
-                  </button>
-                )}
-                <button
-                  onClick={() => startEdit(record)}
-                  className="text-gray-500 hover:text-black"
-                  aria-label="Editar"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-                <button
-                  onClick={() => handleDeleteClick(record)}
-                  className="text-gray-500 hover:text-rose-700"
-                  aria-label="Eliminar"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+              <div className="w-36 border-r border-black px-2 py-1 text-right">
+                <RecordAmount record={record} />
               </div>
-            )}
+              {hasLink && (
+                <div className="w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500">
+                  {getLinkedName(record.linkedTo)}
+                </div>
+              )}
+              {!readOnly && (
+                <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+                  {isActivo && (
+                    <Link
+                      href={`/activos/${record.id}`}
+                      className="text-gray-500 hover:text-black"
+                      aria-label="Ver activo"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                    </Link>
+                  )}
+                  {/* Groups: no edit/delete from dashboard */}
+                  {!record.isGroupParent && (
+                    <>
+                      <button
+                        onClick={() => startEdit(record)}
+                        className="text-gray-500 hover:text-black"
+                        aria-label="Editar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteClick(record)}
+                        className="text-gray-500 hover:text-rose-700"
+                        aria-label="Eliminar"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Expanded group children */}
+            {record.isGroupParent && expandedGroupIds.has(record.id) &&
+              getGroupChildren(record.id).map((child) => (
+                <div key={child.id} className="group flex border-b border-black bg-gray-50/50 text-sm">
+                  <div className="flex-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">
+                    {child.name}
+                  </div>
+                  <div className="w-36 border-r border-black px-2 py-1 text-right text-gray-600">
+                    <RecordAmount record={child} />
+                  </div>
+                  {hasLink && <div className="w-24 border-r border-black px-2 py-1" />}
+                  {!readOnly && (
+                    <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      <Link
+                        href={`/activos/${child.id}`}
+                        className="text-gray-500 hover:text-black"
+                        aria-label="Ver activo"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Link>
+                      <button
+                        onClick={() => startEdit(child)}
+                        className="text-gray-500 hover:text-black"
+                        aria-label="Editar"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      {onDeleteWithComment && child.amount !== 0 && (
+                        <button
+                          onClick={() => { setPendingDelete(child); setDeleteComment(""); setDeleteCreateIngreso(false) }}
+                          className="text-gray-500 hover:text-rose-700"
+                          aria-label="Poner en cero"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
           </div>
         ),
       )}
@@ -536,32 +643,137 @@ function SectionTable({
         </div>
       </div>
 
-      {/* Delete confirmation dialog */}
+      {/* Delete asset dialog */}
       {pendingDelete && (
-        <ConfirmWithCommentDialog
-          open={!!pendingDelete}
-          onOpenChange={(o) => !o && setPendingDelete(null)}
-          title="Poner activo en cero"
-          description={`El valor de "${pendingDelete.name}" pasará a 0. El activo no se elimina.`}
-          onConfirm={(comment) => {
-            onDeleteWithComment?.(pendingDelete, comment)
-            setPendingDelete(null)
-          }}
-        />
+        <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) { setPendingDelete(null); setDeleteComment(""); setDeleteCreateIngreso(false) } }}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
+            <DialogPrimitive.Content className="fixed left-1/2 top-[12%] z-50 w-full max-w-sm -translate-x-1/2 border-2 border-black bg-white p-0">
+              <div className="border-b-2 border-black bg-black px-4 py-3">
+                <DialogPrimitive.Title className="font-bold italic text-white">Poner activo en cero</DialogPrimitive.Title>
+              </div>
+              <div className="flex flex-col gap-4 px-4 py-4">
+                <p className="text-sm text-gray-600">
+                  El valor de &quot;{pendingDelete.name}&quot; pasará a 0. Se registrará un movimiento de Egreso.
+                </p>
+                <label className="flex cursor-pointer items-center gap-2 rounded border border-gray-200 p-3 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={deleteCreateIngreso}
+                    onChange={(e) => setDeleteCreateIngreso(e.target.checked)}
+                    className="rounded"
+                  />
+                  <span>
+                    Crear ingreso asociado{" "}
+                    <span className="text-xs text-gray-500">
+                      ({formatAmount(pendingDelete.amount, pendingDelete.currency)} {pendingDelete.currency})
+                    </span>
+                  </span>
+                </label>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">
+                    Comentario <span className="font-normal normal-case text-gray-400">(opcional)</span>
+                  </Label>
+                  <Textarea
+                    value={deleteComment}
+                    onChange={(e) => setDeleteComment(e.target.value)}
+                    placeholder="¿Por qué realizás este cambio?"
+                    className="resize-none rounded-none border-2 border-black focus-visible:ring-0"
+                    rows={2}
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 border-t-2 border-black px-4 py-3">
+                <Button variant="outline" className="border-2 border-black" onClick={() => { setPendingDelete(null); setDeleteComment(""); setDeleteCreateIngreso(false) }}>
+                  Cancelar
+                </Button>
+                <Button className="bg-black text-white hover:bg-gray-800" onClick={() => {
+                  onDeleteWithComment?.(pendingDelete, deleteComment, deleteCreateIngreso)
+                  setPendingDelete(null)
+                  setDeleteComment("")
+                  setDeleteCreateIngreso(false)
+                }}>
+                  Confirmar
+                </Button>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       )}
 
-      {/* Edit amount confirmation dialog */}
+      {/* Edit amount dialog */}
       {pendingEdit && (
-        <ConfirmWithCommentDialog
-          open={!!pendingEdit}
-          onOpenChange={(o) => !o && setPendingEdit(null)}
-          title="Cambiar valor del activo"
-          description={`Nuevo valor: ${formatAmount(pendingEdit.record.amount, pendingEdit.record.currency)} ${pendingEdit.record.currency}`}
-          onConfirm={(comment) => {
-            onEditAmountWithComment?.(pendingEdit.record, pendingEdit.previous, comment)
-            setPendingEdit(null)
-          }}
-        />
+        <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false) } }}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
+            <DialogPrimitive.Content className="fixed left-1/2 top-[12%] z-50 w-full max-w-sm -translate-x-1/2 border-2 border-black bg-white p-0">
+              <div className="border-b-2 border-black bg-black px-4 py-3">
+                <DialogPrimitive.Title className="font-bold italic text-white">Cambiar valor del activo</DialogPrimitive.Title>
+              </div>
+              <div className="flex flex-col gap-4 px-4 py-4">
+                <p className="text-sm text-gray-600">
+                  Nuevo valor: <strong>{formatAmount(pendingEdit.record.amount, pendingEdit.record.currency)} {pendingEdit.record.currency}</strong>
+                </p>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">Tipo de movimiento</Label>
+                  <div className="flex gap-3">
+                    {(["ADJUSTMENT", "DEPOSIT"] as DashboardMovementType[]).map((t) => (
+                      <label key={t} className="flex cursor-pointer items-center gap-1.5 text-sm">
+                        <input
+                          type="radio"
+                          name="movementType"
+                          value={t}
+                          checked={editMovementType === t}
+                          onChange={() => { setEditMovementType(t); if (t !== "DEPOSIT") setEditCreateGasto(false) }}
+                        />
+                        {t === "ADJUSTMENT" ? "Ajuste" : "Depósito"}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {editMovementType === "DEPOSIT" && (
+                  <label className="flex cursor-pointer items-center gap-2 rounded border border-gray-200 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editCreateGasto}
+                      onChange={(e) => setEditCreateGasto(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>Crear gasto asociado</span>
+                  </label>
+                )}
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">
+                    Comentario <span className="font-normal normal-case text-gray-400">(opcional)</span>
+                  </Label>
+                  <Textarea
+                    value={editComment}
+                    onChange={(e) => setEditComment(e.target.value)}
+                    placeholder="¿Por qué realizás este cambio?"
+                    className="resize-none rounded-none border-2 border-black focus-visible:ring-0"
+                    rows={2}
+                    autoFocus
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 border-t-2 border-black px-4 py-3">
+                <Button variant="outline" className="border-2 border-black" onClick={() => { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false) }}>
+                  Cancelar
+                </Button>
+                <Button className="bg-black text-white hover:bg-gray-800" onClick={() => {
+                  onEditAmountWithComment?.(pendingEdit.record, pendingEdit.previous, editComment, editMovementType, editCreateGasto)
+                  setPendingEdit(null)
+                  setEditComment("")
+                  setEditMovementType("ADJUSTMENT")
+                  setEditCreateGasto(false)
+                }}>
+                  Confirmar
+                </Button>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
       )}
     </div>
   )

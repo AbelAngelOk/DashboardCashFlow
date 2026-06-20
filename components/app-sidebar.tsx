@@ -4,6 +4,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import { LayoutDashboard, Camera, History, LogOut, Settings2, TrendingUp } from "lucide-react"
+
 import { cn } from "@/lib/utils"
 import { useFinance } from "@/components/finance-store"
 
@@ -49,11 +50,10 @@ export function AppSidebar() {
   ]
 
   return (
-    <aside className="flex w-64 shrink-0 flex-col border-r-2 border-black bg-gray-50">
-      <div className="border-b-2 border-black bg-black px-4 py-3">
-        <span className="font-bold text-white">Cash Flow</span>
-      </div>
-
+    <aside
+      data-testid="app-sidebar"
+      className="flex w-56 shrink-0 flex-col border-r-2 border-black bg-gray-50"
+    >
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2 text-sm">
         {items.map(({ href, label, icon: Icon, badge }) => {
           const active = isActive(href)
@@ -87,12 +87,9 @@ export function AppSidebar() {
 
       {session?.user && (
         <div className="border-t-2 border-black p-3">
-          <p className="truncate text-xs font-semibold text-gray-700">
-            {session.user.name ?? session.user.email}
-          </p>
           <button
             onClick={() => signOut({ callbackUrl: "/login" })}
-            className="mt-2 flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200"
+            className="flex w-full items-center gap-2 rounded-md px-3 py-1.5 text-xs font-semibold text-gray-600 hover:bg-gray-200"
           >
             <LogOut className="h-3.5 w-3.5" />
             Cerrar sesión

@@ -16,11 +16,12 @@ import {
 import { DashboardSheet } from "@/components/dashboard-sheet"
 import { useFinance, currentPeriod } from "@/components/finance-store"
 import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialog"
-import { createAdjustmentMovement } from "@/lib/assets-actions"
+import { addMovement, zeroOutAsset } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
+import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
 export default function DashboardPage() {
-  const { records, snapshots, createRecord, editRecord, deleteRecord, takeSnapshot } =
+  const { records, snapshots, createRecord, editRecord, deleteRecord, takeSnapshot, reload } =
     useFinance()
 
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
@@ -29,29 +30,55 @@ export default function DashboardPage() {
   const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
     editRecord(record, previous)
     const diff = record.amount - previous.amount
-    createAdjustmentMovement(record.id, diff, record.currency).catch(console.error)
+    addMovement({
+      recordId: record.id,
+      movementType: "ADJUSTMENT",
+      amount: diff,
+      currency: record.currency,
+    }).catch(console.error)
   }
 
-  const handleActivoDelete = (record: FinancialRecord) => {
-    deleteRecord(record)
+  const handleActivoDelete = (record: FinancialRecord, comment: string, createIngreso: boolean) => {
+    // Zero out the record optimistically
+    const zeroed = { ...record, amount: 0 }
+    editRecord(zeroed, record)
+    zeroOutAsset(record.id, record.amount, record.currency, record.name, comment || undefined, createIngreso)
+      .then((ingresoId) => {
+        if (ingresoId) {
+          reload()
+        }
+      })
+      .catch(console.error)
   }
 
   const handleActivoEditAmount = (
     record: FinancialRecord,
     previous: FinancialRecord,
     comment: string,
+    movementType: DashboardMovementType,
+    createGasto: boolean,
   ) => {
     if (record.isGroupParent) {
       handleGroupAdjust(record, previous)
     } else {
       editRecord(record, previous)
       const diff = record.amount - previous.amount
-      createAdjustmentMovement(
-        record.id,
-        diff,
-        record.currency,
-        comment || undefined,
-      ).catch(console.error)
+      addMovement({
+        recordId: record.id,
+        movementType,
+        amount: diff,
+        currency: record.currency,
+        description: comment || undefined,
+      }).catch(console.error)
+      if (movementType === "DEPOSIT" && createGasto) {
+        createRecord({
+          id: crypto.randomUUID(),
+          type: "gasto",
+          name: `Depósito en ${record.name}`,
+          amount: diff,
+          currency: record.currency,
+        })
+      }
     }
   }
   const [snapshotName, setSnapshotName] = useState("")
@@ -107,8 +134,8 @@ export default function DashboardPage() {
         onDelete={deleteRecord}
         onGroupAdjust={handleGroupAdjust}
         onBreakdown={setBreakdownRecord}
-        onDeleteWithComment={handleActivoDelete}
-        onEditAmountWithComment={handleActivoEditAmount}
+        onDeleteWithComment={(r, c, i) => handleActivoDelete(r, c, i)}
+        onEditAmountWithComment={(r, p, c, t, g) => handleActivoEditAmount(r, p, c, t, g)}
       />
 
       {breakdownRecord && (

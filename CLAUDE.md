@@ -41,7 +41,7 @@ Two React Contexts, both mounted in `app/(dashboard)/layout.tsx`:
 - `reload()` — re-fetches all data from DB; used after Server Actions that bypass the context (e.g. asset creation).
 
 **`SettingsProvider`** (`components/settings-store.tsx`) — configuration:
-- Exchange rates, display preferences
+- Exchange rates, display preferences, hidden/custom asset types
 - Persisted to `localStorage` key `cashflow:settings`
 
 ### Data types (`lib/finance.ts`)
@@ -52,36 +52,120 @@ Four record types: `"ingreso"`, `"gasto"`, `"activo"`, `"pasivo"`. Each `Financi
 
 ### Asset types (`lib/assets.ts`)
 
-`AssetType`: STOCK, BOND, FIXED_TERM, CRYPTO, FUTURES, OPTIONS, TRADING, TRADING_BOT, REBALANCE_BOT, OTHER.
-Each asset type has a dedicated panel in `components/activos/panels/`. The dispatcher `components/activos/asset-detail.tsx` routes to the correct panel based on `asset.assetType`.
+`AssetType`: STOCK, BOND, FIXED_TERM, CRYPTO, FUTURES, OPTIONS, TRADING, TRADING_BOT, REBALANCE_BOT, GROUP.
+Each type has a dedicated panel in `components/activos/panels/`. `components/activos/asset-detail.tsx` routes to the correct panel based on `asset.assetType`.
+
+`GROUP` type is an organizer record that groups children. Groups are collapsible in both `/activos` and the dashboard.
+
+### Board system (`components/activos/boards/`)
+
+Optional boards rendered below the required Info + Movements sections on the asset detail page.
+
+- **`BoardManager`** — renders all `asset.boards` and shows "Agregar tablero" dropdown (Dividendos | Tablero personalizado)
+- **`DividendsBoard`** — dividend entries with recurring support (monthly/quarterly/semi-annual/annual); 12-month window pre-generated. Collecting a dividend auto-creates an ingreso in the dashboard.
+- **`CustomBoard`** — configurable table (columns + rows); title is editable inline
+
+Board data lives in `metadata.boards: BoardConfig[]` on the Record. `extractBoards()` in `lib/assets.ts` handles backwards migration from legacy `metadata.tracking` and `metadata.dividends`.
+
+### Notifications (`components/notifications/`)
+
+`NotificationsProvider` wraps `AppShell` and computes `AppNotification[]` client-side from `records`. Dividend pending notifications fire when `dividend.month === currentYYYYMM && !dividend.actualGain`. Read state persists in `localStorage: "cashflow:notifications"`.
+
+### Rich text editor (`components/ui/rich-editor.tsx`)
+
+TipTap v3 wrapper used for the `description` field in `AssetInfoSection`. Stores JSON in `description String?`. Falls back to plain text for legacy string values. Decision doc at `docs/decision-editor-rico.md`.
+
+### Inline editing (`AssetInfoSection`)
+
+Per-field editing (name, ticker, assetType, description). Click field → edit mode; blur → save (200ms debounce). No global edit mode.
 
 ### UI layout
 
 `app/layout.tsx` → `AuthProvider`
-`app/(dashboard)/layout.tsx` → `SettingsProvider` → `FinanceProvider` → `AppShell` → `AppSidebar` + `<main>{children}</main>` + `Toaster`
+`app/(dashboard)/layout.tsx` → `SettingsProvider` → `FinanceProvider` → `AppShell`
+
+`AppShell` → `NotificationsProvider` → [column: `AppHeader` (full width) | row: `AppSidebar` + `<main>`] + `Toaster`
+
+`AppHeader` shows user name (left) and notification bell (right). `AppSidebar` shows nav links + sign-out button.
 
 ### Key reusable component
 
-`components/dashboard-sheet.tsx` — renders the full financial dashboard (Estado de Resultados + Balance) as editable tables. Accepts a `readOnly` boolean prop: when `true`, hides add/edit/delete controls. Used on the live dashboard (`/`) and in read-only snapshot views (`/snapshots/[id]`).
+`components/dashboard-sheet.tsx` — renders the full financial dashboard (Estado de Resultados + Balance) as editable tables. Accepts a `readOnly` boolean prop: when `true`, hides add/edit/delete controls. Used on the live dashboard (`/`) and in read-only snapshot views (`/snapshots/[id]`). Group activos in the assets table are collapsible — click chevron to expand children. Groups are not editable/deletable from the dashboard.
 
 ### Pages
 
 | Route | File | Purpose |
 |---|---|---|
 | `/` | `app/(dashboard)/page.tsx` | Live editable dashboard + snapshot dialog |
-| `/activos` | `app/(dashboard)/activos/page.tsx` | Asset list with type filter |
-| `/activos/[id]` | `app/(dashboard)/activos/[id]/page.tsx` | Asset detail + type-specific panel |
+| `/activos` | `app/(dashboard)/activos/page.tsx` | Asset list; "Agrupar" mode for creating groups |
+| `/activos/[id]` | `app/(dashboard)/activos/[id]/page.tsx` | Asset detail: inline edit fields + panels + boards |
 | `/snapshots` | `app/(dashboard)/snapshots/page.tsx` | List of saved snapshots |
 | `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Read-only snapshot view |
 | `/movimientos` | `app/(dashboard)/movimientos/page.tsx` | Audit log of all record changes |
+| `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Currency settings + configurable asset types |
+
+### Component IDs (`data-testid`)
+
+All main visual containers have `data-testid` attributes. Full list at `docs/ComponentIds.md`.
+
+### Dashboard dialogs for activos
+
+Editing an activo's value from the dashboard shows a custom dialog with:
+- **Movement type** selector: Ajuste (ADJUSTMENT) | Depósito (DEPOSIT)
+- When Depósito: optional "Crear gasto asociado" switch → creates a linked gasto record
+- Optional comment
+The dialog calls `onEditAmountWithComment(record, previous, comment, movementType, createGasto)`.
+
+Deleting (zeroing out) an activo from the dashboard shows a dialog with:
+- Optional "Crear ingreso asociado" switch → creates a linked ingreso record
+- Optional comment
+Calls `zeroOutAsset()` server action (sets amount=0 + creates EXTRACT movement).
+
+GROUP children in the expanded view also show the zero-out delete button.
+
+### Asset form validation
+
+`AssetFormDialog`: for types with qty/price (STOCK, CRYPTO, FUTURES, OPTIONS), changing qty or price auto-calculates amount. If all three are manually set and `qty × price ≠ amount`, a warning is shown and save is blocked.
+
+### Asset movements editing
+
+`AssetMovementsSection`: click pencil icon on a movement row → inline edit for `movementType` + `description` (comment). Save on Enter or ✓ button.
+
+### Group management
+
+- `createGroup(name, childIds, currency)` — creates new GROUP + sets parentId on children
+- `assignToGroup(groupId, childIds)` — adds assets to existing group
+- `removeFromGroup(assetId)` — removes one asset from its group (parentId → null)
+- `deleteGroup(groupId)` — detaches all children + soft-deletes group parent
+- `ungroupAssets(parentId)` — same as deleteGroup (alias used in UngroupButton)
+
+In `/activos` "Agrupar" mode: select ≥ 2 assets → choose "Crear nuevo grupo" or "Asignar a grupo existente" → confirm.
+
+### Configurable asset types
+
+`DashboardSettings` (in `cashflow:settings` localStorage) includes:
+- `hiddenAssetTypes: AssetType[]` — system types toggled off; hidden from all dropdowns
+- `customAssetTypes: { id, name }[]` — user-defined types; appear in all selectors
+
+Managed in `/configuracion` under "Tipos de Activo". `GROUP` is never shown in type selectors anywhere.
+
+### GROUP asset detail
+
+For GROUP assets in `/activos/[id]`, the section order is fixed:
+1. AssetInfoSection (Información General)
+2. Group children summary (Activos del Grupo)
+3. AssetMovementsSection (Movimientos)
+No BoardManager for GROUP type.
 
 ### Patterns to know
 
 - **Soft-delete**: assets and records use `deletedAt` timestamp; queries always filter `deletedAt: null`
-- **Asset deletion**: both dashboard and `/activos` use soft-delete via `deleteRecord()` from context
+- **Asset deletion in dashboard**: calls `zeroOutAsset()` (sets amount=0, creates EXTRACT movement, optionally creates ingreso) — does NOT soft-delete the record
+- **Asset deletion in /activos**: still calls `deleteRecord()` from context (soft-delete via `dbDeleteRecord`)
 - **Asset creation**: `AssetFormDialog` calls `createAsset()` (Server Action) then `reload()` — does NOT call `createRecord()` to avoid a duplicate DB insert
 - **`fire(promise)`**: fires a promise in the background; shows a destructive toast on error
 - **Debounce**: comment updates in `/movimientos` are debounced 600ms before DB write
+- **Multi-select filter**: `/activos` type filter is multi-select; buttons toggle, "Todos" clears selection
 
 ### Styling conventions
 

@@ -132,7 +132,7 @@ export function RebalanceBotPanel({ asset }: RebalanceBotPanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div data-testid="asset-panel-rebalance-bot" className="flex flex-col gap-6">
       {/* Header */}
       <div className="border-2 border-black">
         <div className="flex items-center justify-between border-b-2 border-black bg-black px-3 py-2">

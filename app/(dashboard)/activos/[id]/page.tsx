@@ -5,8 +5,9 @@ import { loadAsset } from "@/lib/assets-actions"
 import { ASSET_TYPE_LABELS } from "@/lib/assets"
 import { AssetInfoSection } from "@/components/activos/asset-info-section"
 import { AssetMovementsSection } from "@/components/activos/asset-movements-section"
-import { AssetTrackingSection } from "@/components/activos/asset-tracking-section"
 import { AssetDetail } from "@/components/activos/asset-detail"
+import { BoardManager } from "@/components/activos/boards/board-manager"
+import { UngroupButton } from "@/components/activos/ungroup-button"
 
 export default async function AssetDetailPage({
   params,
@@ -38,9 +39,12 @@ export default async function AssetDetailPage({
           <span className="font-mono text-sm text-gray-500">{asset.ticker}</span>
         )}
         {asset.isGroupParent && (
-          <span className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500">
-            Grupo ({asset.children?.length ?? 0} activos)
-          </span>
+          <>
+            <span className="rounded border border-gray-300 px-2 py-0.5 text-xs text-gray-500">
+              Grupo ({asset.children?.length ?? 0} activos)
+            </span>
+            <UngroupButton assetId={asset.id} />
+          </>
         )}
       </div>
 
@@ -72,15 +76,23 @@ export default async function AssetDetailPage({
         {/* 1. Información general */}
         <AssetInfoSection asset={asset} />
 
-        {/* 2. Panel tipo-específico */}
-        <AssetDetail asset={asset} />
+        {asset.isGroupParent ? (
+          <>
+            {/* GROUP: fixed order — Info → Members (above) → Movements */}
+            <AssetMovementsSection asset={asset} />
+          </>
+        ) : (
+          <>
+            {/* 2. Panel tipo-específico */}
+            <AssetDetail asset={asset} />
 
-        {/* 3. Movimientos (cambios en el precio del activo) */}
-        <AssetMovementsSection asset={asset} />
+            {/* 3. Movimientos */}
+            <AssetMovementsSection asset={asset} />
 
-        {/* 4. Seguimiento (tabla configurable) */}
-        <AssetTrackingSection asset={asset} />
-
+            {/* 4. Tableros opcionales (dividendos + personalizados) */}
+            <BoardManager asset={asset} />
+          </>
+        )}
       </div>
     </div>
   )

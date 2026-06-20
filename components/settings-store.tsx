@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react"
 import { type Currency, currencies } from "@/lib/finance"
+import type { AssetType } from "@/lib/assets"
 
 // Default rates relative to USD (fallback when API is unreachable)
 const DEFAULT_RATES_USD: Record<Currency, number> = {
@@ -19,6 +20,11 @@ const DEFAULT_RATES_USD: Record<Currency, number> = {
   USDT: 1,
 }
 
+export interface CustomAssetType {
+  id: string
+  name: string
+}
+
 export interface DashboardSettings {
   convertCurrencies: boolean
   baseCurrency: Currency
@@ -26,6 +32,8 @@ export interface DashboardSettings {
   // rates[X] = how many baseCurrency units 1 X is worth
   exchangeRates: Record<Currency, number>
   ratesLastUpdated: string | null
+  hiddenAssetTypes: AssetType[]
+  customAssetTypes: CustomAssetType[]
 }
 
 const DEFAULT_SETTINGS: DashboardSettings = {
@@ -34,6 +42,8 @@ const DEFAULT_SETTINGS: DashboardSettings = {
   showConvertedAmounts: false,
   exchangeRates: { ...DEFAULT_RATES_USD },
   ratesLastUpdated: null,
+  hiddenAssetTypes: [],
+  customAssetTypes: [],
 }
 
 interface SettingsContextValue {
@@ -42,6 +52,10 @@ interface SettingsContextValue {
   updateRate: (currency: Currency, rate: number) => void
   fetchExchangeRates: () => Promise<void>
   fetchingRates: boolean
+  toggleHideAssetType: (type: AssetType) => void
+  addCustomAssetType: (name: string) => void
+  renameCustomAssetType: (id: string, name: string) => void
+  removeCustomAssetType: (id: string) => void
 }
 
 const SettingsContext = createContext<SettingsContextValue | null>(null)
@@ -156,9 +170,71 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
     }
   }, [settings.baseCurrency])
 
+  const toggleHideAssetType = useCallback((type: AssetType) => {
+    setSettings((prev) => {
+      const hidden = prev.hiddenAssetTypes ?? []
+      const next = {
+        ...prev,
+        hiddenAssetTypes: hidden.includes(type)
+          ? hidden.filter((t) => t !== type)
+          : [...hidden, type],
+      }
+      saveToStorage(next)
+      return next
+    })
+  }, [])
+
+  const addCustomAssetType = useCallback((name: string) => {
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        customAssetTypes: [
+          ...(prev.customAssetTypes ?? []),
+          { id: crypto.randomUUID(), name },
+        ],
+      }
+      saveToStorage(next)
+      return next
+    })
+  }, [])
+
+  const renameCustomAssetType = useCallback((id: string, name: string) => {
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        customAssetTypes: (prev.customAssetTypes ?? []).map((t) =>
+          t.id === id ? { ...t, name } : t,
+        ),
+      }
+      saveToStorage(next)
+      return next
+    })
+  }, [])
+
+  const removeCustomAssetType = useCallback((id: string) => {
+    setSettings((prev) => {
+      const next = {
+        ...prev,
+        customAssetTypes: (prev.customAssetTypes ?? []).filter((t) => t.id !== id),
+      }
+      saveToStorage(next)
+      return next
+    })
+  }, [])
+
   return (
     <SettingsContext.Provider
-      value={{ settings, updateSettings, updateRate, fetchExchangeRates, fetchingRates }}
+      value={{
+        settings,
+        updateSettings,
+        updateRate,
+        fetchExchangeRates,
+        fetchingRates,
+        toggleHideAssetType,
+        addCustomAssetType,
+        renameCustomAssetType,
+        removeCustomAssetType,
+      }}
     >
       {children}
     </SettingsContext.Provider>

@@ -16,7 +16,7 @@ export function GenericAssetPanel({ asset }: GenericAssetPanelProps) {
   if (!hasTechnicalInfo) return null
 
   return (
-    <div className="border-2 border-black">
+    <div data-testid="asset-panel-generic" className="border-2 border-black">
       <div className="border-b-2 border-black bg-black px-3 py-2">
         <span className="font-bold italic text-white">Detalles técnicos</span>
       </div>

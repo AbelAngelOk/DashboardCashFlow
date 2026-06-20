@@ -45,7 +45,7 @@ export function FixedTermPanel({ asset }: FixedTermPanelProps) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div data-testid="asset-panel-fixed-term" className="flex flex-col gap-6">
       {/* Details panel */}
       <div className="border-2 border-black">
         <div className="border-b-2 border-black bg-black px-3 py-2">

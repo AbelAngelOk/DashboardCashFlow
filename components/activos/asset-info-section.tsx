@@ -1,14 +1,23 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useRef, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
-import { Pencil, Check, X } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
+import { Pencil } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { RichEditor } from "@/components/ui/rich-editor"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { formatAmount } from "@/lib/finance"
-import type { Asset } from "@/lib/assets"
+import { type Asset, type AssetType, ASSET_TYPE_LABELS } from "@/lib/assets"
 import { updateAsset } from "@/lib/assets-actions"
+import { useSettings } from "@/components/settings-store"
+
+type EditableField = "name" | "ticker" | "assetType" | "description"
 
 interface AssetInfoSectionProps {
   asset: Asset
@@ -16,72 +25,65 @@ interface AssetInfoSectionProps {
 
 export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-  const [editing, setEditing] = useState(false)
-  const [draftName, setDraftName] = useState(asset.name)
-  const [draftDesc, setDraftDesc] = useState(asset.description ?? "")
-  const [draftTicker, setDraftTicker] = useState(asset.ticker ?? "")
+  const [, startTransition] = useTransition()
+  const { settings } = useSettings()
+  const { hiddenAssetTypes = [], customAssetTypes = [] } = settings
+  const visibleSystemTypes = (Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).filter(
+    ([t]) => t !== "GROUP" && !hiddenAssetTypes.includes(t),
+  )
+  const [editingField, setEditingField] = useState<EditableField | null>(null)
+  const [draft, setDraft] = useState("")
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  const startEdit = () => {
-    setDraftName(asset.name)
-    setDraftDesc(asset.description ?? "")
-    setDraftTicker(asset.ticker ?? "")
-    setEditing(true)
+  const startEdit = (field: EditableField) => {
+    const value =
+      field === "name" ? asset.name
+      : field === "ticker" ? (asset.ticker ?? "")
+      : field === "assetType" ? (asset.assetType ?? "")
+      : (asset.description ?? "")
+    setDraft(value)
+    setEditingField(field)
   }
 
-  const cancelEdit = () => setEditing(false)
-
-  const saveEdit = () => {
-    if (!draftName.trim()) return
-    startTransition(async () => {
-      await updateAsset(asset.id, {
-        name: draftName.trim(),
-        description: draftDesc.trim() || undefined,
-        ticker: draftTicker.trim() || undefined,
+  const save = (field: EditableField, value: string) => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current)
+    saveTimeoutRef.current = setTimeout(() => {
+      startTransition(async () => {
+        if (field === "name" && !value.trim()) return
+        const patch: Parameters<typeof updateAsset>[1] = {}
+        if (field === "name") patch.name = value.trim()
+        else if (field === "ticker") patch.ticker = value.trim() || undefined
+        else if (field === "assetType") patch.assetType = (value as AssetType) || undefined
+        else if (field === "description") patch.description = value.trim() || undefined
+        await updateAsset(asset.id, patch)
+        router.refresh()
       })
-      router.refresh()
-      setEditing(false)
-    })
+    }, 200)
+  }
+
+  const handleBlur = (field: EditableField) => {
+    save(field, draft)
+    setEditingField(null)
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent, field: EditableField) => {
+    if (e.key === "Escape") {
+      setEditingField(null)
+    } else if (e.key === "Enter" && field !== "description") {
+      e.preventDefault()
+      save(field, draft)
+      setEditingField(null)
+    }
   }
 
   return (
-    <div className="border-2 border-black">
-      <div className="flex items-center justify-between border-b-2 border-black bg-black px-3 py-2">
+    <div data-testid="asset-info-section" className="border-2 border-black">
+      <div className="border-b-2 border-black bg-black px-3 py-2">
         <span className="font-bold italic text-white">Información general</span>
-        {!editing && (
-          <Button
-            size="sm"
-            variant="ghost"
-            className="h-6 w-6 p-0 text-white hover:bg-white/20"
-            onClick={startEdit}
-            aria-label="Editar información"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </Button>
-        )}
-        {editing && (
-          <div className="flex gap-1">
-            <button
-              onClick={saveEdit}
-              disabled={isPending}
-              className="text-emerald-400 hover:text-emerald-200"
-              aria-label="Guardar"
-            >
-              <Check className="h-4 w-4" />
-            </button>
-            <button
-              onClick={cancelEdit}
-              className="text-gray-400 hover:text-white"
-              aria-label="Cancelar"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 p-4 text-sm md:grid-cols-2">
-        {/* Valor actual — always read-only (changes via dashboard) */}
+        {/* Valor actual — always read-only */}
         <div>
           <div className="mb-1 text-xs font-bold uppercase text-gray-500">Valor actual</div>
           <div className="font-bold">
@@ -90,53 +92,126 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
           </div>
         </div>
 
+        {/* Tipo de activo */}
+        <div>
+          <div className="mb-1 text-xs font-bold uppercase text-gray-500">Tipo de activo</div>
+          {editingField === "assetType" ? (
+            <Select
+              value={draft}
+              onValueChange={(v) => {
+                setDraft(v)
+                save("assetType", v)
+                setEditingField(null)
+              }}
+              open
+              onOpenChange={(open) => {
+                if (!open) setEditingField(null)
+              }}
+            >
+              <SelectTrigger className="h-8 border-2 border-black focus:ring-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {visibleSystemTypes.map(([type, label]) => (
+                  <SelectItem key={type} value={type}>
+                    {label}
+                  </SelectItem>
+                ))}
+                {customAssetTypes.map((ct) => (
+                  <SelectItem key={ct.id} value={ct.id}>
+                    {ct.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <button
+              onClick={() => startEdit("assetType")}
+              className="group flex items-center gap-1 text-left"
+            >
+              <span className="font-medium">
+                {asset.assetType
+                  ? ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType
+                  : <span className="italic text-gray-400">—</span>}
+              </span>
+              <Pencil className="h-3 w-3 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
+          )}
+        </div>
+
         {/* Ticker */}
         <div>
           <div className="mb-1 text-xs font-bold uppercase text-gray-500">Ticker</div>
-          {editing ? (
+          {editingField === "ticker" ? (
             <Input
-              value={draftTicker}
-              onChange={(e) => setDraftTicker(e.target.value)}
+              autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => handleBlur("ticker")}
+              onKeyDown={(e) => handleKeyDown(e, "ticker")}
               placeholder="Ej: AAPL, BTCUSDT"
-              className="border-2 border-black font-mono"
+              className="h-8 border-2 border-black font-mono focus-visible:ring-0"
             />
           ) : (
-            <div className="font-mono">
-              {asset.ticker || <span className="italic text-gray-400">—</span>}
-            </div>
+            <button
+              onClick={() => startEdit("ticker")}
+              className="group flex items-center gap-1 text-left"
+            >
+              <span className="font-mono">
+                {asset.ticker || <span className="italic text-gray-400">—</span>}
+              </span>
+              <Pencil className="h-3 w-3 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
           )}
         </div>
 
         {/* Nombre */}
         <div>
           <div className="mb-1 text-xs font-bold uppercase text-gray-500">Nombre</div>
-          {editing ? (
+          {editingField === "name" ? (
             <Input
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              className="border-2 border-black"
               autoFocus
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={() => handleBlur("name")}
+              onKeyDown={(e) => handleKeyDown(e, "name")}
+              className="h-8 border-2 border-black focus-visible:ring-0"
             />
           ) : (
-            <div className="font-medium">{asset.name}</div>
+            <button
+              onClick={() => startEdit("name")}
+              className="group flex items-center gap-1 text-left"
+            >
+              <span className="font-medium">{asset.name}</span>
+              <Pencil className="h-3 w-3 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
           )}
         </div>
 
         {/* Descripción — full width */}
         <div className="md:col-span-2">
           <div className="mb-1 text-xs font-bold uppercase text-gray-500">Descripción</div>
-          {editing ? (
-            <Textarea
-              value={draftDesc}
-              onChange={(e) => setDraftDesc(e.target.value)}
+          {editingField === "description" ? (
+            <RichEditor
+              value={draft}
+              onChange={(json) => setDraft(json)}
+              onBlur={() => handleBlur("description")}
               placeholder="Descripción del activo..."
-              className="resize-none border-2 border-black focus-visible:ring-0"
-              rows={3}
             />
           ) : (
-            <div className="text-gray-700">
-              {asset.description || <span className="italic text-gray-400">Sin descripción</span>}
-            </div>
+            <button
+              onClick={() => startEdit("description")}
+              className="group flex w-full items-start gap-1 text-left"
+            >
+              <div className="flex-1 text-gray-700">
+                {asset.description ? (
+                  <RichEditor value={asset.description} readOnly />
+                ) : (
+                  <span className="italic text-gray-400">Sin descripción — click para editar</span>
+                )}
+              </div>
+              <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
+            </button>
           )}
         </div>
       </div>

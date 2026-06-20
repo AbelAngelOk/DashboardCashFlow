@@ -22,6 +22,7 @@ import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { currencies, defaultCurrency, type Currency } from "@/lib/finance"
 import { createAsset } from "@/lib/assets-actions"
 import { useFinance } from "@/components/finance-store"
+import { useSettings } from "@/components/settings-store"
 
 interface AssetFormDialogProps {
   open: boolean
@@ -41,6 +42,13 @@ export function AssetFormDialog({
   defaultAssetType = "STOCK",
 }: AssetFormDialogProps) {
   const { reload } = useFinance()
+  const { settings } = useSettings()
+  const { hiddenAssetTypes = [], customAssetTypes = [] } = settings
+
+  const visibleSystemTypes = (Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).filter(
+    ([type]) => type !== "GROUP" && !hiddenAssetTypes.includes(type),
+  )
+
   const [assetType, setAssetType] = useState<AssetType>(defaultAssetType)
   const [name, setName] = useState(defaultName)
   const [ticker, setTicker] = useState("")
@@ -54,6 +62,31 @@ export function AssetFormDialog({
   const [ftEndDate, setFtEndDate] = useState("")
   const [ftRate, setFtRate] = useState("")
   const [saving, setSaving] = useState(false)
+
+  const hasQtyPrice = ["STOCK", "CRYPTO", "FUTURES", "OPTIONS"].includes(assetType)
+  const qtyNum = Number(qty)
+  const priceNum = Number(avgPrice)
+  const amountNum = Number(amount)
+  const calcMismatch =
+    hasQtyPrice &&
+    qty !== "" &&
+    avgPrice !== "" &&
+    amount !== "" &&
+    Math.abs(qtyNum * priceNum - amountNum) > 0.01
+
+  const handleQtyChange = (v: string) => {
+    setQty(v)
+    if (v !== "" && avgPrice !== "") {
+      setAmount(String(Number(v) * Number(avgPrice)))
+    }
+  }
+
+  const handlePriceChange = (v: string) => {
+    setAvgPrice(v)
+    if (v !== "" && qty !== "") {
+      setAmount(String(Number(qty) * Number(v)))
+    }
+  }
 
   const reset = () => {
     setName(defaultName)
@@ -134,13 +167,16 @@ export function AssetFormDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {(Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).map(
-                  ([type, label]) => (
-                    <SelectItem key={type} value={type}>
-                      {label}
-                    </SelectItem>
-                  ),
-                )}
+                {visibleSystemTypes.map(([type, label]) => (
+                  <SelectItem key={type} value={type}>
+                    {label}
+                  </SelectItem>
+                ))}
+                {customAssetTypes.map((ct) => (
+                  <SelectItem key={ct.id} value={ct.id}>
+                    {ct.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -197,29 +233,36 @@ export function AssetFormDialog({
           </div>
 
           {/* Cantidad + Precio promedio (para activos con unidades) */}
-          {["STOCK", "CRYPTO", "FUTURES", "OPTIONS"].includes(assetType) && (
-            <div className="flex gap-3">
-              <div className="flex flex-1 flex-col gap-1">
-                <Label className="text-xs font-bold uppercase">Cantidad inicial</Label>
-                <Input
-                  type="number"
-                  value={qty}
-                  onChange={(e) => setQty(e.target.value)}
-                  placeholder="0"
-                  className="border-2 border-black"
-                />
+          {hasQtyPrice && (
+            <>
+              <div className="flex gap-3">
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">Cantidad inicial</Label>
+                  <Input
+                    type="number"
+                    value={qty}
+                    onChange={(e) => handleQtyChange(e.target.value)}
+                    placeholder="0"
+                    className={`border-2 ${calcMismatch ? "border-amber-500" : "border-black"}`}
+                  />
+                </div>
+                <div className="flex flex-1 flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">Precio promedio</Label>
+                  <Input
+                    type="number"
+                    value={avgPrice}
+                    onChange={(e) => handlePriceChange(e.target.value)}
+                    placeholder="0.00"
+                    className={`border-2 ${calcMismatch ? "border-amber-500" : "border-black"}`}
+                  />
+                </div>
               </div>
-              <div className="flex flex-1 flex-col gap-1">
-                <Label className="text-xs font-bold uppercase">Precio promedio</Label>
-                <Input
-                  type="number"
-                  value={avgPrice}
-                  onChange={(e) => setAvgPrice(e.target.value)}
-                  placeholder="0.00"
-                  className="border-2 border-black"
-                />
-              </div>
-            </div>
+              {calcMismatch && (
+                <p className="text-xs text-amber-700">
+                  El valor ({amount}) no coincide con cantidad × precio ({(qtyNum * priceNum).toFixed(2)}). Corregí uno de los tres campos.
+                </p>
+              )}
+            </>
           )}
 
           {/* FIXED_TERM extras */}
@@ -277,7 +320,7 @@ export function AssetFormDialog({
           <Button
             className="bg-black text-white hover:bg-gray-800"
             onClick={handleSave}
-            disabled={saving || !name.trim() || !amount}
+            disabled={saving || !name.trim() || !amount || calcMismatch}
           >
             {saving ? "Guardando..." : "Guardar"}
           </Button>

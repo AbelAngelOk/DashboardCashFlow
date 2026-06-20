@@ -1,19 +1,37 @@
 "use client"
 
-import { useState } from "react"
-import { TrendingUp, Plus, EyeOff, Eye } from "lucide-react"
+import { useState, useTransition } from "react"
+import { useRouter } from "next/navigation"
+import { TrendingUp, Plus, EyeOff, Eye, Network, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { useFinance } from "@/components/finance-store"
 import { AssetList } from "@/components/activos/asset-list"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
+import { createGroup, removeFromGroup, deleteGroup, assignToGroup } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
 
 export default function ActivosPage() {
-  const { records, deleteRecord } = useFinance()
+  const router = useRouter()
+  const { records, deleteRecord, reload } = useFinance()
+  const [isPending, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
   const [hideZero, setHideZero] = useState(true)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [groupName, setGroupName] = useState("")
+  // "new" = create new group, groupId = assign to existing group
+  const [groupTarget, setGroupTarget] = useState<"new" | string>("new")
 
   const allActivos = records.filter((r) => r.type === "activo")
+  const groupParents = allActivos.filter((r) => r.isGroupParent)
 
   const topLevel = allActivos.filter((r) => {
     if (r.parentId) return false
@@ -25,6 +43,62 @@ export default function ActivosPage() {
     deleteRecord(record)
   }
 
+  const handleRemoveFromGroup = (assetId: string) => {
+    startTransition(async () => {
+      await removeFromGroup(assetId)
+      await reload()
+      router.refresh()
+    })
+  }
+
+  const handleDeleteGroup = (record: FinancialRecord) => {
+    startTransition(async () => {
+      await deleteGroup(record.id)
+      await reload()
+      router.refresh()
+    })
+  }
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setGroupName("")
+    setGroupTarget("new")
+  }
+
+  const selectedRecords = allActivos.filter((r) => selectedIds.has(r.id))
+  const canGroup = selectedIds.size >= 2
+
+  const handleGroupAction = () => {
+    const ids = [...selectedIds]
+    const currency = selectedRecords[0]?.currency ?? "USD"
+
+    if (groupTarget === "new") {
+      if (!groupName.trim()) return
+      startTransition(async () => {
+        await createGroup(groupName.trim(), ids, currency)
+        await reload()
+        router.refresh()
+        exitSelectMode()
+      })
+    } else {
+      startTransition(async () => {
+        await assignToGroup(groupTarget, ids)
+        await reload()
+        router.refresh()
+        exitSelectMode()
+      })
+    }
+  }
+
   return (
     <div className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-2">
@@ -33,28 +107,110 @@ export default function ActivosPage() {
           <span className="text-lg font-bold italic">Activos</span>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            size="sm"
-            variant="outline"
-            className={`gap-2 border-2 border-black text-xs ${hideZero ? "bg-black text-white" : "bg-white text-black"}`}
-            onClick={() => setHideZero((v) => !v)}
-            title={hideZero ? "Mostrar activos en cero" : "Ocultar activos en cero"}
-          >
-            {hideZero ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-            Balance cero
-          </Button>
-          <Button
-            size="sm"
-            className="gap-2 bg-black text-white hover:bg-gray-800"
-            onClick={() => setOpen(true)}
-          >
-            <Plus className="h-4 w-4" />
-            Nuevo activo
-          </Button>
+          {selectMode ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 border-2 border-black text-xs"
+              onClick={exitSelectMode}
+            >
+              <X className="h-3.5 w-3.5" />
+              Cancelar
+            </Button>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className={`gap-2 border-2 border-black text-xs ${hideZero ? "bg-black text-white" : "bg-white text-black"}`}
+                onClick={() => setHideZero((v) => !v)}
+                title={hideZero ? "Mostrar activos en cero" : "Ocultar activos en cero"}
+              >
+                {hideZero ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                Balance cero
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="gap-2 border-2 border-black text-xs"
+                onClick={() => setSelectMode(true)}
+              >
+                <Network className="h-3.5 w-3.5" />
+                Agrupar
+              </Button>
+              <Button
+                size="sm"
+                className="gap-2 bg-black text-white hover:bg-gray-800"
+                onClick={() => setOpen(true)}
+              >
+                <Plus className="h-4 w-4" />
+                Nuevo activo
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
-      <AssetList topLevel={topLevel} all={allActivos} onDelete={handleDelete} />
+      {/* Group action bar */}
+      {selectMode && canGroup && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 border-2 border-black bg-gray-50 px-4 py-3">
+          <span className="text-sm font-bold">
+            {selectedIds.size} activos seleccionados
+          </span>
+
+          {/* Target: new group or existing */}
+          <Select value={groupTarget} onValueChange={setGroupTarget}>
+            <SelectTrigger className="h-8 w-52 border-2 border-black text-xs focus:ring-0">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="new" className="text-xs">Crear nuevo grupo</SelectItem>
+              {groupParents.map((g) => (
+                <SelectItem key={g.id} value={g.id} className="text-xs">
+                  Agregar a: {g.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {groupTarget === "new" && (
+            <Input
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleGroupAction()}
+              placeholder="Nombre del grupo..."
+              className="h-8 w-48 border-2 border-black focus-visible:ring-0"
+              autoFocus
+            />
+          )}
+
+          <Button
+            size="sm"
+            className="bg-black text-white hover:bg-gray-800"
+            onClick={handleGroupAction}
+            disabled={(groupTarget === "new" && !groupName.trim()) || isPending}
+          >
+            {isPending ? "Procesando..." : groupTarget === "new" ? "Crear grupo" : "Asignar al grupo"}
+          </Button>
+        </div>
+      )}
+
+      {selectMode && !canGroup && (
+        <div className="mb-4 border-2 border-dashed border-gray-300 px-4 py-3 text-center text-sm text-gray-500">
+          Seleccioná al menos 2 activos para agrupar.
+        </div>
+      )}
+
+      <AssetList
+        topLevel={topLevel}
+        all={allActivos}
+        onDelete={handleDelete}
+        onRemoveFromGroup={handleRemoveFromGroup}
+        onDeleteGroup={handleDeleteGroup}
+        selectMode={selectMode}
+        selectedIds={selectedIds}
+        onToggleSelect={toggleSelect}
+      />
 
       <AssetFormDialog open={open} onOpenChange={setOpen} />
     </div>

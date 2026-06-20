@@ -170,7 +170,7 @@ export function FuturesPanel({ asset }: FuturesPanelProps) {
   const suggestedName = `${asset.ticker ?? asset.name} (${metadata?.liquidationSuffix ?? 2})`
 
   return (
-    <div className="flex flex-col gap-6">
+    <div data-testid="asset-panel-futures" className="flex flex-col gap-6">
       {/* Info header */}
       <div className="border-2 border-black">
         <div className="border-b-2 border-black bg-black px-3 py-2">

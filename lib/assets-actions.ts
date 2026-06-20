@@ -3,7 +3,8 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
-import type { Asset, AssetFinancialMovement, AssetType, MovementType, TrackingConfig } from "./assets"
+import type { Asset, AssetFinancialMovement, AssetType, MovementType, TrackingConfig, BoardConfig } from "./assets"
+import { extractBoards } from "./assets"
 import type { Currency } from "./finance"
 
 async function getUserId(): Promise<string> {
@@ -102,6 +103,7 @@ export async function updateAsset(
     amount?: number
     currency?: Currency
     ticker?: string
+    assetType?: AssetType
     currentQty?: number
     avgBuyPrice?: number
     description?: string
@@ -116,12 +118,39 @@ export async function updateAsset(
       ...(data.amount !== undefined && { amount: data.amount }),
       ...(data.currency !== undefined && { currency: data.currency }),
       ...(data.ticker !== undefined && { ticker: data.ticker }),
+      ...(data.assetType !== undefined && { assetType: data.assetType }),
       ...(data.currentQty !== undefined && { currentQty: data.currentQty }),
       ...(data.avgBuyPrice !== undefined && { avgBuyPrice: data.avgBuyPrice }),
       ...(data.description !== undefined && { description: data.description }),
       ...(data.metadata != null ? { metadata: data.metadata as object } : {}),
     },
   })
+}
+
+/** Persist the boards array for an asset, merging with existing metadata */
+export async function updateBoards(id: string, boards: BoardConfig[]): Promise<void> {
+  const userId = await getUserId()
+  const record = await prisma.record.findFirst({ where: { id, userId }, select: { metadata: true } })
+  const current = (record?.metadata as Record<string, unknown>) ?? {}
+  await prisma.record.update({
+    where: { id, userId },
+    data: { metadata: { ...current, boards: boards as unknown as object } },
+  })
+}
+
+/** Ungroup: detach all children and soft-delete the parent group record */
+export async function ungroupAssets(parentId: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.$transaction([
+    prisma.record.updateMany({
+      where: { parentId, userId },
+      data: { parentId: null },
+    }),
+    prisma.record.update({
+      where: { id: parentId, userId },
+      data: { deletedAt: new Date() },
+    }),
+  ])
 }
 
 export async function deleteAsset(id: string): Promise<void> {
@@ -170,6 +199,7 @@ export async function addMovement(data: {
 export async function updateMovement(
   id: string,
   data: {
+    movementType?: MovementType
     amount?: number
     quantity?: number
     unitPrice?: number
@@ -182,6 +212,7 @@ export async function updateMovement(
   await prisma.financialMovement.update({
     where: { id, userId },
     data: {
+      ...(data.movementType !== undefined && { movementType: data.movementType }),
       ...(data.amount !== undefined && { amount: data.amount }),
       ...(data.quantity !== undefined && { quantity: data.quantity }),
       ...(data.unitPrice !== undefined && { unitPrice: data.unitPrice }),
@@ -199,21 +230,34 @@ export async function deleteMovement(id: string): Promise<void> {
 
 // ── Domain operations ─────────────────────────────────────────────────────────
 
+/**
+ * Collect a dividend from a boards-based DividendsBoard.
+ * boardId: the id of the BoardConfig that holds this dividend.
+ */
 export async function collectDividend(
   assetId: string,
   dividendId: string,
+  boardId: string,
   actualGain: number,
   currency: Currency,
   assetName: string,
-  currentMetadata: unknown,
 ): Promise<string> {
   const userId = await getUserId()
   const ingresoId = crypto.randomUUID()
 
-  const meta = currentMetadata as { dividends: Array<{ id: string; actualGain?: number; ingresoRecordId?: string }> }
-  const updatedDividends = meta.dividends.map((d) =>
-    d.id === dividendId ? { ...d, actualGain, ingresoRecordId: ingresoId } : d,
-  )
+  const record = await prisma.record.findFirst({ where: { id: assetId, userId }, select: { metadata: true } })
+  const rawMeta = (record?.metadata as Record<string, unknown>) ?? {}
+  const boards = extractBoards(rawMeta)
+
+  const updatedBoards = boards.map((b) => {
+    if (b.id !== boardId) return b
+    return {
+      ...b,
+      dividends: (b.dividends ?? []).map((d) =>
+        d.id === dividendId ? { ...d, actualGain, ingresoRecordId: ingresoId } : d,
+      ),
+    }
+  })
 
   await prisma.$transaction([
     prisma.record.create({
@@ -228,7 +272,7 @@ export async function collectDividend(
     }),
     prisma.record.update({
       where: { id: assetId, userId },
-      data: { metadata: { ...meta, dividends: updatedDividends } },
+      data: { metadata: { ...rawMeta, boards: updatedBoards as unknown as object } },
     }),
   ])
   return ingresoId
@@ -259,6 +303,55 @@ export async function collectFixedTerm(
       data: { deletedAt: new Date() },
     }),
   ])
+  return ingresoId
+}
+
+/**
+ * Set an asset's amount to 0 (logical delete) + create an EXTRACT movement.
+ * Optionally creates an ingreso record for the asset's previous value.
+ * Returns the ingreso record id if created, otherwise null.
+ */
+export async function zeroOutAsset(
+  recordId: string,
+  previousAmount: number,
+  currency: Currency,
+  assetName: string,
+  description?: string,
+  createIngreso?: boolean,
+): Promise<string | null> {
+  const userId = await getUserId()
+  const ingresoId = createIngreso ? crypto.randomUUID() : null
+
+  await prisma.$transaction(async (tx) => {
+    await tx.record.update({
+      where: { id: recordId, userId },
+      data: { amount: 0 },
+    })
+    await tx.financialMovement.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId,
+        recordId,
+        movementType: "EXTRACT",
+        amount: previousAmount,
+        currency,
+        operationDate: new Date(),
+        description: description ?? `Egreso (valor puesto en 0): ${assetName}`,
+      },
+    })
+    if (ingresoId) {
+      await tx.record.create({
+        data: {
+          id: ingresoId,
+          type: "ingreso",
+          name: `Liquidación ${assetName}`,
+          amount: previousAmount,
+          currency,
+          userId,
+        },
+      })
+    }
+  })
   return ingresoId
 }
 
@@ -296,6 +389,88 @@ export async function updateTracking(assetId: string, tracking: TrackingConfig):
   })
 }
 
+/**
+ * Create a new GROUP record and attach childIds as children.
+ * Returns the new group record id.
+ */
+export async function createGroup(
+  name: string,
+  childIds: string[],
+  currency: Currency,
+): Promise<string> {
+  const userId = await getUserId()
+  const groupId = crypto.randomUUID()
+
+  // Sum child amounts to set group amount
+  const children = await prisma.record.findMany({
+    where: { id: { in: childIds }, userId, deletedAt: null },
+    select: { amount: true },
+  })
+  const totalAmount = children.reduce((s, c) => {
+    const v = typeof c.amount === "number" ? c.amount : (c.amount as { toNumber: () => number }).toNumber()
+    return s + v
+  }, 0)
+
+  await prisma.$transaction([
+    prisma.record.create({
+      data: {
+        id: groupId,
+        type: "activo",
+        name,
+        amount: totalAmount,
+        currency,
+        assetType: "GROUP",
+        userId,
+      },
+    }),
+    prisma.record.updateMany({
+      where: { id: { in: childIds }, userId },
+      data: { parentId: groupId },
+    }),
+  ])
+  return groupId
+}
+
+/** Remove a single child asset from its group (set parentId = null) */
+export async function removeFromGroup(assetId: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.update({
+    where: { id: assetId, userId },
+    data: { parentId: null },
+  })
+}
+
+/**
+ * Delete a group: detach all children (parentId → null) and soft-delete the group parent.
+ * Children are NOT deleted — they become standalone assets.
+ */
+export async function deleteGroup(groupId: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.$transaction([
+    prisma.record.updateMany({
+      where: { parentId: groupId, userId },
+      data: { parentId: null },
+    }),
+    prisma.record.update({
+      where: { id: groupId, userId },
+      data: { deletedAt: new Date() },
+    }),
+  ])
+}
+
+/**
+ * Assign a list of assets to an existing group (set their parentId).
+ * Assets already in another group are moved to the new one.
+ */
+export async function assignToGroup(groupId: string, childIds: string[]): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.updateMany({
+    where: { id: { in: childIds }, userId },
+    data: { parentId: groupId },
+  })
+}
+
+/** Legacy: attach children to an existing parent record */
 export async function groupAssets(parentId: string, childIds: string[]): Promise<void> {
   const userId = await getUserId()
   await prisma.record.updateMany({
@@ -358,6 +533,7 @@ function mapMovement(m: DbMovement): AssetFinancialMovement {
 }
 
 function mapToAsset(r: DbRecord): Asset {
+  const rawMeta = r.metadata as Record<string, unknown> | null
   return {
     id: r.id,
     name: r.name,
@@ -371,7 +547,8 @@ function mapToAsset(r: DbRecord): Asset {
     parentId: r.parentId ?? undefined,
     isGroupParent: (r.children?.length ?? 0) > 0,
     metadata: r.metadata as Asset["metadata"],
-    tracking: ((r.metadata as Record<string, unknown> | null)?.tracking) as TrackingConfig | undefined,
+    boards: extractBoards(rawMeta),
+    tracking: (rawMeta?.tracking) as TrackingConfig | undefined,
     movements: r.financialMovements.map(mapMovement),
     children: r.children?.map(mapToAsset),
   }
