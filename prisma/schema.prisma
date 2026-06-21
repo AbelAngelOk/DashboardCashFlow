@@ -113,8 +113,91 @@ model User {
   snapshots          Snapshot[]
   financialMovements FinancialMovement[]
   auditLogs          AuditLog[]
+  obligations        Obligation[]
+  obligationPayments ObligationPayment[]
 
   @@map("users")
+}
+
+// ── Módulo Obligaciones ────────────────────────────────────────────────────────
+
+model Obligation {
+  id             String    @id @default(uuid())
+  userId         String    @map("user_id")
+  obligationType String    @map("obligation_type") // "RECURRING" | "INSTALLMENT" | "FIXED"
+  name           String
+  description    String?
+  currency       String
+  amount         Decimal   @db.Decimal(18, 4)
+  status         String    @default("ACTIVE")     // "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED"
+  nextDueDate    DateTime? @map("next_due_date")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  metadata       Json?
+
+  user         User                    @relation(fields: [userId], references: [id])
+  rules        ObligationRule[]
+  installments ObligationInstallment[]
+  payments     ObligationPayment[]
+
+  @@map("obligations")
+  @@index([userId, status])
+  @@index([userId, nextDueDate])
+}
+
+model ObligationRule {
+  id             String   @id @default(uuid())
+  obligationId   String   @map("obligation_id")
+  name           String
+  recurrenceType String   @map("recurrence_type") // "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"
+  startDate      DateTime @map("start_date")
+  expectedAmount Decimal  @db.Decimal(18, 4) @map("expected_amount")
+  currency       String
+  status         String   @default("ACTIVE") // "ACTIVE" | "PAUSED"
+  metadata       Json?
+
+  obligation Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+
+  @@map("obligation_rules")
+  @@index([obligationId])
+}
+
+model ObligationInstallment {
+  id                String   @id @default(uuid())
+  obligationId      String   @map("obligation_id")
+  installmentNumber Int      @map("installment_number")
+  dueDate           DateTime @map("due_date")
+  expectedAmount    Decimal  @db.Decimal(18, 4) @map("expected_amount")
+  status            String   @default("PENDING") // "PENDING" | "OVERDUE" | "PAID" | "REJECTED"
+  gastoRecordId     String?  @map("gasto_record_id")
+
+  obligation Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+
+  @@map("obligation_installments")
+  @@index([obligationId])
+  @@index([dueDate, status])
+}
+
+model ObligationPayment {
+  id             String    @id @default(uuid())
+  obligationId   String    @map("obligation_id")
+  userId         String    @map("user_id")
+  ruleId         String?   @map("rule_id")
+  paymentType    String    @map("payment_type") // "PAYMENT" | "INTEREST" | "FEE"
+  expectedDate   DateTime? @map("expected_date")
+  expectedAmount Decimal?  @db.Decimal(18, 4) @map("expected_amount")
+  currency       String
+  gastoRecordId  String?   @map("gasto_record_id")
+  status         String                          // "PENDING" | "PAID" | "REJECTED"
+  comment        String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  obligation Obligation @relation(fields: [obligationId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id])
+
+  @@map("obligation_payments")
+  @@index([obligationId])
+  @@index([userId, expectedDate])
+  @@index([ruleId])
 }
 
 model FinancialMovement {

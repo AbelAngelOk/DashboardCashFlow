@@ -180,12 +180,20 @@ export interface BoardConfig {
 // ── Notifications ─────────────────────────────────────────────────────────────
 
 export interface AppNotification {
-  id: string                  // deterministic: "dividend-{assetId}-{dividendId}"
-  type: "dividend_pending"    // extensible
+  id: string
+  type: "dividend_pending" | "obligation_due" | "obligation_overdue"
   title: string
   body: string
+  // dividend fields
   assetId?: string
   dividendId?: string
+  // obligation fields
+  obligationId?: string
+  paymentId?: string       // RECURRING pending payment
+  installmentId?: string   // INSTALLMENT pending installment
+  expectedAmount?: number
+  currency?: string
+  dueDate?: string
   createdAt: string
 }
 

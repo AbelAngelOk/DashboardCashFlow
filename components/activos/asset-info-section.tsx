@@ -16,6 +16,7 @@ import { formatAmount } from "@/lib/finance"
 import { type Asset, type AssetType, ASSET_TYPE_LABELS } from "@/lib/assets"
 import { updateAsset } from "@/lib/assets-actions"
 import { useSettings } from "@/components/settings-store"
+import { GroupValueDisplay } from "@/components/group-value-display"
 
 type EditableField = "name" | "ticker" | "assetType" | "description"
 
@@ -87,8 +88,14 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
         <div>
           <div className="mb-1 text-xs font-bold uppercase text-gray-500">Valor actual</div>
           <div className="font-bold">
-            {formatAmount(asset.amount, asset.currency)}{" "}
-            <span className="text-gray-500">{asset.currency}</span>
+            {asset.isGroupParent && asset.children && asset.children.length > 0 ? (
+              <GroupValueDisplay children={asset.children} />
+            ) : (
+              <>
+                {formatAmount(asset.amount, asset.currency)}{" "}
+                <span className="text-gray-500">{asset.currency}</span>
+              </>
+            )}
           </div>
         </div>
 

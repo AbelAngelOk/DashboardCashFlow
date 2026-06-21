@@ -114,3 +114,52 @@ export function calculateTotalsConverted(
     0,
   )
 }
+
+// ── Group valuation ───────────────────────────────────────────────────────────
+
+export type GroupValueResult =
+  | { type: "single"; value: number; currency: Currency }
+  | { type: "breakdown"; entries: Array<{ currency: Currency; value: number }> }
+
+/**
+ * Compute the display value of a group from its children.
+ * This is the single source of truth for group valuation across all views.
+ *
+ * - convertCurrencies=true  → single total in baseCurrency
+ * - convertCurrencies=false → per-currency breakdown (or single if all same currency)
+ */
+export function computeGroupValue(
+  children: Array<{ amount: number; currency: Currency }>,
+  convertCurrencies: boolean,
+  baseCurrency: Currency,
+  exchangeRates: Record<Currency, number>,
+): GroupValueResult {
+  if (children.length === 0) {
+    return { type: "single", value: 0, currency: baseCurrency }
+  }
+
+  if (convertCurrencies) {
+    const total = children.reduce(
+      (sum, c) => sum + convertAmount(c.amount, c.currency, baseCurrency, exchangeRates),
+      0,
+    )
+    return { type: "single", value: total, currency: baseCurrency }
+  }
+
+  // No conversion: group by currency
+  const breakdown: Record<string, number> = {}
+  for (const c of children) {
+    breakdown[c.currency] = (breakdown[c.currency] ?? 0) + c.amount
+  }
+
+  const entries = (Object.entries(breakdown) as Array<[Currency, number]>)
+    .filter(([, v]) => v > 0)
+    .map(([currency, value]) => ({ currency, value }))
+
+  if (entries.length <= 1) {
+    const e = entries[0]
+    return { type: "single", value: e?.value ?? 0, currency: e?.currency ?? baseCurrency }
+  }
+
+  return { type: "breakdown", entries }
+}

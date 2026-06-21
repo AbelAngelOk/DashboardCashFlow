@@ -16,7 +16,7 @@ import {
 import { DashboardSheet } from "@/components/dashboard-sheet"
 import { useFinance, currentPeriod } from "@/components/finance-store"
 import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialog"
-import { addMovement, zeroOutAsset } from "@/lib/assets-actions"
+import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
 import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
@@ -57,9 +57,24 @@ export default function DashboardPage() {
     comment: string,
     movementType: DashboardMovementType,
     createGasto: boolean,
+    createIngreso: boolean,
   ) => {
     if (record.isGroupParent) {
       handleGroupAdjust(record, previous)
+    } else if (movementType === "EXTRACT") {
+      const egressAmount = previous.amount - record.amount
+      editRecord(record, previous)
+      createExtractFromDashboard(
+        record.id,
+        record.amount,
+        egressAmount,
+        record.currency,
+        record.name,
+        comment || undefined,
+        createIngreso,
+      )
+        .then((ingresoId) => { if (ingresoId) reload() })
+        .catch(console.error)
     } else {
       editRecord(record, previous)
       const diff = record.amount - previous.amount
@@ -135,7 +150,7 @@ export default function DashboardPage() {
         onGroupAdjust={handleGroupAdjust}
         onBreakdown={setBreakdownRecord}
         onDeleteWithComment={(r, c, i) => handleActivoDelete(r, c, i)}
-        onEditAmountWithComment={(r, p, c, t, g) => handleActivoEditAmount(r, p, c, t, g)}
+        onEditAmountWithComment={(r, p, c, t, g, i) => handleActivoEditAmount(r, p, c, t, g, i)}
       />
 
       {breakdownRecord && (

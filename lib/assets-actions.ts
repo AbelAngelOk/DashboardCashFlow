@@ -111,6 +111,13 @@ export async function updateAsset(
   },
 ): Promise<void> {
   const userId = await getUserId()
+
+  let parentId: string | null = null
+  if (data.amount !== undefined) {
+    const current = await prisma.record.findFirst({ where: { id, userId }, select: { parentId: true } })
+    parentId = current?.parentId ?? null
+  }
+
   await prisma.record.update({
     where: { id, userId },
     data: {
@@ -125,6 +132,10 @@ export async function updateAsset(
       ...(data.metadata != null ? { metadata: data.metadata as object } : {}),
     },
   })
+
+  if (parentId && data.amount !== undefined) {
+    await recalcularGrupo(parentId, userId)
+  }
 }
 
 /** Persist the boards array for an asset, merging with existing metadata */
@@ -434,10 +445,11 @@ export async function createGroup(
 /** Remove a single child asset from its group (set parentId = null) */
 export async function removeFromGroup(assetId: string): Promise<void> {
   const userId = await getUserId()
-  await prisma.record.update({
-    where: { id: assetId, userId },
-    data: { parentId: null },
-  })
+  const child = await prisma.record.findFirst({ where: { id: assetId, userId }, select: { parentId: true } })
+  await prisma.record.update({ where: { id: assetId, userId }, data: { parentId: null } })
+  if (child?.parentId) {
+    await recalcularGrupo(child.parentId, userId)
+  }
 }
 
 /**
@@ -477,6 +489,195 @@ export async function groupAssets(parentId: string, childIds: string[]): Promise
     where: { id: { in: childIds }, userId },
     data: { parentId },
   })
+}
+
+// ── Group recalculation ───────────────────────────────────────────────────────
+
+async function recalcularGrupo(groupId: string, userId: string): Promise<void> {
+  const children = await prisma.record.findMany({
+    where: { parentId: groupId, userId, deletedAt: null },
+    select: { amount: true, currency: true },
+  })
+
+  const breakdown: Record<string, number> = {}
+  let totalSameCurrency = 0
+  const group = await prisma.record.findFirst({
+    where: { id: groupId, userId },
+    select: { currency: true, metadata: true },
+  })
+  const groupCurrency = group?.currency ?? "USD"
+
+  for (const child of children) {
+    const amt = typeof child.amount === "number" ? child.amount : (child.amount as { toNumber: () => number }).toNumber()
+    breakdown[child.currency] = (breakdown[child.currency] ?? 0) + amt
+    if (child.currency === groupCurrency) totalSameCurrency += amt
+  }
+
+  const currentMeta = (group?.metadata as Record<string, unknown>) ?? {}
+  await prisma.record.update({
+    where: { id: groupId, userId },
+    data: {
+      amount: totalSameCurrency,
+      metadata: { ...currentMeta, currencyBreakdown: breakdown },
+    },
+  })
+}
+
+// ── Liquidar / eliminar activos ───────────────────────────────────────────────
+
+/**
+ * Liquidar un activo: pone amount=0, crea movimiento EXTRACT, opcionalmente crea ingreso.
+ * Recalcula el grupo padre si existe.
+ */
+export async function liquidarActivo(
+  recordId: string,
+  previousAmount: number,
+  currency: Currency,
+  assetName: string,
+  description?: string,
+  createIngreso?: boolean,
+): Promise<string | null> {
+  const userId = await getUserId()
+  const ingresoId = createIngreso ? crypto.randomUUID() : null
+  const movementId = crypto.randomUUID()
+
+  const record = await prisma.record.findFirst({
+    where: { id: recordId, userId },
+    select: { parentId: true },
+  })
+
+  await prisma.$transaction(async (tx) => {
+    await tx.record.update({ where: { id: recordId, userId }, data: { amount: 0 } })
+
+    await tx.financialMovement.create({
+      data: {
+        id: movementId,
+        userId,
+        recordId,
+        movementType: "EXTRACT",
+        amount: previousAmount,
+        currency,
+        operationDate: new Date(),
+        description: description ?? `Liquidación: ${assetName}`,
+        ...(ingresoId ? { metadata: { relatedIngresoId: ingresoId } as object } : {}),
+      },
+    })
+
+    if (ingresoId) {
+      await tx.record.create({
+        data: {
+          id: ingresoId,
+          type: "ingreso",
+          name: `Liquidación de ${assetName}`,
+          amount: previousAmount,
+          currency,
+          userId,
+        },
+      })
+    }
+  })
+
+  if (record?.parentId) {
+    await recalcularGrupo(record.parentId, userId)
+  }
+
+  return ingresoId
+}
+
+/**
+ * Eliminar físicamente un activo con balance = 0.
+ * Elimina sus movimientos financieros y desvincula el audit log antes de borrar el record.
+ * Guard: solo elimina si amount sigue siendo 0.
+ */
+export async function physicalDeleteAsset(recordId: string): Promise<void> {
+  const userId = await getUserId()
+
+  const record = await prisma.record.findFirst({
+    where: { id: recordId, userId, deletedAt: null },
+    select: { amount: true, parentId: true },
+  })
+  if (!record) return
+
+  const amount = typeof record.amount === "number" ? record.amount : (record.amount as { toNumber: () => number }).toNumber()
+  if (amount !== 0) return // guard de seguridad
+
+  const parentId = record.parentId
+
+  await prisma.$transaction(async (tx) => {
+    // Desvincular audit log (movements tabla) para evitar FK violation
+    await tx.auditLog.updateMany({
+      where: { recordId, userId },
+      data: { recordId: null },
+    })
+    // Eliminar movimientos financieros del activo
+    await tx.financialMovement.deleteMany({ where: { recordId, userId } })
+    // Eliminar el record físicamente
+    await tx.record.delete({ where: { id: recordId, userId } })
+  })
+
+  if (parentId) {
+    await recalcularGrupo(parentId, userId)
+  }
+}
+
+/**
+ * Crear un movimiento EXTRACT parcial desde el dashboard (Egreso).
+ * Actualiza el amount del activo, crea movimiento EXTRACT, opcionalmente crea ingreso.
+ */
+export async function createExtractFromDashboard(
+  recordId: string,
+  newAmount: number,
+  egressAmount: number,
+  currency: Currency,
+  assetName: string,
+  description?: string,
+  createIngreso?: boolean,
+): Promise<string | null> {
+  const userId = await getUserId()
+  const ingresoId = createIngreso ? crypto.randomUUID() : null
+  const movementId = crypto.randomUUID()
+
+  const record = await prisma.record.findFirst({
+    where: { id: recordId, userId },
+    select: { parentId: true },
+  })
+
+  await prisma.$transaction(async (tx) => {
+    await tx.record.update({ where: { id: recordId, userId }, data: { amount: newAmount } })
+
+    await tx.financialMovement.create({
+      data: {
+        id: movementId,
+        userId,
+        recordId,
+        movementType: "EXTRACT",
+        amount: egressAmount,
+        currency,
+        operationDate: new Date(),
+        description: description ?? `Egreso: ${assetName}`,
+        ...(ingresoId ? { metadata: { relatedIngresoId: ingresoId } as object } : {}),
+      },
+    })
+
+    if (ingresoId) {
+      await tx.record.create({
+        data: {
+          id: ingresoId,
+          type: "ingreso",
+          name: `Venta de ${assetName}`,
+          amount: egressAmount,
+          currency,
+          userId,
+        },
+      })
+    }
+  })
+
+  if (record?.parentId) {
+    await recalcularGrupo(record.parentId, userId)
+  }
+
+  return ingresoId
 }
 
 // ── Internal mapping ──────────────────────────────────────────────────────────

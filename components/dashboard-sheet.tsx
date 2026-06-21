@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
-import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight } from "lucide-react"
+import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -24,8 +24,11 @@ import {
   defaultCurrency,
   formatAmount,
 } from "@/lib/finance"
+import { GroupValueDisplay } from "@/components/group-value-display"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { useSettings } from "@/components/settings-store"
+import { useObligations } from "@/components/obligations-store"
+import { computeRecurringBreakdown } from "@/lib/obligations"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 
@@ -103,7 +106,15 @@ interface DraftRow {
   linkedTo: string
 }
 
-export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT"
+interface ExtraRow {
+  id: string
+  name: string
+  href: string
+  paused?: boolean
+  valueNode: React.ReactNode
+}
+
+export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT" | "EXTRACT"
 
 interface DashboardSheetProps {
   records: FinancialRecord[]
@@ -120,6 +131,7 @@ interface DashboardSheetProps {
     comment: string,
     movementType: DashboardMovementType,
     createGasto: boolean,
+    createIngreso: boolean,
   ) => void
 }
 
@@ -157,6 +169,9 @@ interface SectionTableProps {
   linkType?: RecordType
   linkLabel?: string
   readOnly: boolean
+  /** Override the records used for the totals footer (e.g. expanded children instead of stale group parent). */
+  totalRecords?: FinancialRecord[]
+  extraRows?: ExtraRow[]
   onCreate?: (record: FinancialRecord) => void
   onEdit?: (record: FinancialRecord, previous: FinancialRecord) => void
   onDelete?: (record: FinancialRecord) => void
@@ -169,6 +184,7 @@ interface SectionTableProps {
     comment: string,
     movementType: DashboardMovementType,
     createGasto: boolean,
+    createIngreso: boolean,
   ) => void
 }
 
@@ -181,6 +197,8 @@ function SectionTable({
   linkType,
   linkLabel,
   readOnly,
+  totalRecords,
+  extraRows,
   onCreate,
   onEdit,
   onDelete,
@@ -203,6 +221,7 @@ function SectionTable({
   const [editComment, setEditComment] = useState("")
   const [editMovementType, setEditMovementType] = useState<DashboardMovementType>("ADJUSTMENT")
   const [editCreateGasto, setEditCreateGasto] = useState(false)
+  const [editCreateIngreso, setEditCreateIngreso] = useState(false)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
 
   const linkOptions = linkType
@@ -481,7 +500,11 @@ function SectionTable({
                 </div>
               </div>
               <div className="w-36 border-r border-black px-2 py-1 text-right">
-                <RecordAmount record={record} />
+                {record.isGroupParent ? (
+                  <GroupValueDisplay children={getGroupChildren(record.id)} />
+                ) : (
+                  <RecordAmount record={record} />
+                )}
               </div>
               {hasLink && (
                 <div className="w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500">
@@ -566,6 +589,33 @@ function SectionTable({
         ),
       )}
 
+      {/* Extra rows (e.g. obligations merged into pasivos) */}
+      {extraRows?.map((row) => (
+        <div key={row.id} className="group flex border-b border-black text-sm hover:bg-gray-50">
+          <div className="flex flex-1 items-center gap-2 border-r border-black px-2 py-1">
+            <Link href={row.href} className="font-medium hover:underline">
+              {row.name}
+            </Link>
+            {row.paused && (
+              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                Pausada
+              </span>
+            )}
+          </div>
+          <div className="w-36 border-r border-black px-2 py-1 text-right text-sm">
+            {row.valueNode}
+          </div>
+          {hasLink && <div className="w-24 border-r border-black px-2 py-1" />}
+          {!readOnly && (
+            <div className="flex w-16 items-center justify-center px-1">
+              <Link href={row.href} className="text-gray-400 hover:text-black" aria-label="Ver obligación">
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            </div>
+          )}
+        </div>
+      ))}
+
       {/* New editable rows */}
       {!readOnly &&
         newRows.map((row) => (
@@ -639,7 +689,7 @@ function SectionTable({
           Total {title}:
         </div>
         <div className="flex-1 px-2 py-1">
-          <TotalsBlock records={records} className="text-right" />
+          <TotalsBlock records={totalRecords ?? records} className="text-right" />
         </div>
       </div>
 
@@ -704,7 +754,7 @@ function SectionTable({
 
       {/* Edit amount dialog */}
       {pendingEdit && (
-        <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false) } }}>
+        <DialogPrimitive.Root open onOpenChange={(o) => { if (!o) { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false); setEditCreateIngreso(false) } }}>
           <DialogPrimitive.Portal>
             <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
             <DialogPrimitive.Content className="fixed left-1/2 top-[12%] z-50 w-full max-w-sm -translate-x-1/2 border-2 border-black bg-white p-0">
@@ -718,16 +768,20 @@ function SectionTable({
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Tipo de movimiento</Label>
                   <div className="flex gap-3">
-                    {(["ADJUSTMENT", "DEPOSIT"] as DashboardMovementType[]).map((t) => (
+                    {(["ADJUSTMENT", "DEPOSIT", "EXTRACT"] as DashboardMovementType[]).map((t) => (
                       <label key={t} className="flex cursor-pointer items-center gap-1.5 text-sm">
                         <input
                           type="radio"
                           name="movementType"
                           value={t}
                           checked={editMovementType === t}
-                          onChange={() => { setEditMovementType(t); if (t !== "DEPOSIT") setEditCreateGasto(false) }}
+                          onChange={() => {
+                            setEditMovementType(t)
+                            if (t !== "DEPOSIT") setEditCreateGasto(false)
+                            if (t !== "EXTRACT") setEditCreateIngreso(false)
+                          }}
                         />
-                        {t === "ADJUSTMENT" ? "Ajuste" : "Depósito"}
+                        {t === "ADJUSTMENT" ? "Ajuste" : t === "DEPOSIT" ? "Depósito" : "Egreso"}
                       </label>
                     ))}
                   </div>
@@ -741,6 +795,22 @@ function SectionTable({
                       className="rounded"
                     />
                     <span>Crear gasto asociado</span>
+                  </label>
+                )}
+                {editMovementType === "EXTRACT" && (
+                  <label className="flex cursor-pointer items-center gap-2 rounded border border-gray-200 p-3 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={editCreateIngreso}
+                      onChange={(e) => setEditCreateIngreso(e.target.checked)}
+                      className="rounded"
+                    />
+                    <span>
+                      Crear ingreso asociado{" "}
+                      <span className="text-xs text-gray-500">
+                        (&quot;Venta de {pendingEdit.record.name}&quot;)
+                      </span>
+                    </span>
                   </label>
                 )}
                 <div className="flex flex-col gap-1">
@@ -758,15 +828,16 @@ function SectionTable({
                 </div>
               </div>
               <div className="flex justify-end gap-2 border-t-2 border-black px-4 py-3">
-                <Button variant="outline" className="border-2 border-black" onClick={() => { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false) }}>
+                <Button variant="outline" className="border-2 border-black" onClick={() => { setPendingEdit(null); setEditComment(""); setEditMovementType("ADJUSTMENT"); setEditCreateGasto(false); setEditCreateIngreso(false) }}>
                   Cancelar
                 </Button>
                 <Button className="bg-black text-white hover:bg-gray-800" onClick={() => {
-                  onEditAmountWithComment?.(pendingEdit.record, pendingEdit.previous, editComment, editMovementType, editCreateGasto)
+                  onEditAmountWithComment?.(pendingEdit.record, pendingEdit.previous, editComment, editMovementType, editCreateGasto, editCreateIngreso)
                   setPendingEdit(null)
                   setEditComment("")
                   setEditMovementType("ADJUSTMENT")
                   setEditCreateGasto(false)
+                  setEditCreateIngreso(false)
                 }}>
                   Confirmar
                 </Button>
@@ -794,12 +865,63 @@ export function DashboardSheet({
 }: DashboardSheetProps) {
   const { settings } = useSettings()
   const { convertCurrencies, baseCurrency, exchangeRates } = settings
+  const { obligations } = useObligations()
+
+  const obligationExtraRows: ExtraRow[] = readOnly
+    ? []
+    : obligations
+        .filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")
+        .map((o) => {
+          let valueNode: React.ReactNode
+          if (o.obligationType === "RECURRING") {
+            const breakdown = computeRecurringBreakdown(o.rules)
+            const entries = Object.entries(breakdown).filter(([, v]) => v > 0) as [Currency, number][]
+            if (entries.length === 0) {
+              valueNode = <span className="text-gray-400">—</span>
+            } else if (convertCurrencies) {
+              const total = entries.reduce(
+                (s, [cur, val]) => s + convertAmount(val, cur, baseCurrency as Currency, exchangeRates),
+                0,
+              )
+              valueNode = (
+                <div className="flex flex-col items-end leading-tight">
+                  <span>{formatAmount(total, baseCurrency as Currency)} {baseCurrency}</span>
+                  <span className="text-[10px] text-gray-400">anual</span>
+                </div>
+              )
+            } else {
+              valueNode = (
+                <div className="flex flex-col items-end gap-0.5 leading-tight">
+                  {entries.map(([cur, val]) => (
+                    <span key={cur}>{formatAmount(val, cur)} {cur}</span>
+                  ))}
+                  <span className="text-[10px] text-gray-400">anual</span>
+                </div>
+              )
+            }
+          } else {
+            valueNode = <span>{formatAmount(o.amount, o.currency)} {o.currency}</span>
+          }
+          return {
+            id: o.id,
+            name: o.name,
+            href: `/obligaciones/${o.id}`,
+            paused: o.status === "PAUSED",
+            valueNode,
+          }
+        })
 
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
   // Exclude child assets (parentId set) and zero-value assets
   const activos = records.filter((r) => r.type === "activo" && !r.parentId && r.amount !== 0)
   const pasivos = records.filter((r) => r.type === "pasivo")
+
+  // For activos total: use individual children (correct amounts/currencies) and standalone activos.
+  // Exclude group parents whose .amount is a stale DB cache.
+  const activosForTotal = records.filter(
+    (r) => r.type === "activo" && r.amount !== 0 && !r.isGroupParent,
+  )
 
   // ── Auditor values ──────────────────────────────────────────────────────────
   const totalIngresos = calculateTotals(ingresos)
@@ -940,6 +1062,7 @@ export function DashboardSheet({
             type="activo"
             records={activos}
             allRecords={records}
+            totalRecords={activosForTotal}
             valueLabel="Valor"
             readOnly={readOnly}
             onCreate={onCreate}
@@ -957,6 +1080,7 @@ export function DashboardSheet({
             allRecords={records}
             valueLabel="Valor"
             readOnly={readOnly}
+            extraRows={obligationExtraRows}
             onCreate={onCreate}
             onEdit={onEdit}
             onDelete={onDelete}

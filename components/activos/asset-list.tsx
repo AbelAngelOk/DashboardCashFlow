@@ -7,11 +7,97 @@ import { formatAmount, type FinancialRecord } from "@/lib/finance"
 import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
 import { useSettings } from "@/components/settings-store"
+import { GroupValueDisplay } from "@/components/group-value-display"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Textarea } from "@/components/ui/textarea"
+
+// ── LiquidarActivoDialog ──────────────────────────────────────────────────────
+
+function LiquidarActivoDialog({
+  open,
+  record,
+  createIngreso,
+  onCreateIngresoChange,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean
+  record: FinancialRecord
+  createIngreso: boolean
+  onCreateIngresoChange: (v: boolean) => void
+  onOpenChange: (open: boolean) => void
+  onConfirm: (comment: string) => void
+}) {
+  const [comment, setComment] = useState("")
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm rounded-none border-2 border-black p-0">
+        <DialogHeader className="border-b-2 border-black bg-black px-4 py-3">
+          <DialogTitle className="font-bold italic text-white">Liquidar activo</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-4 px-4 py-4 text-sm">
+          <p>
+            <span className="font-bold">{record.name}</span> tiene un balance de{" "}
+            <span className="font-bold">
+              {formatAmount(record.amount, record.currency)} {record.currency}
+            </span>
+            . Al liquidar, el balance pasará a{" "}
+            <span className="font-bold">$0</span>.
+          </p>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="liquidate-ingreso"
+              checked={createIngreso}
+              onCheckedChange={onCreateIngresoChange}
+            />
+            <Label htmlFor="liquidate-ingreso" className="cursor-pointer">
+              Crear ingreso asociado{" "}
+              <span className="text-xs text-gray-500">
+                (&quot;Liquidación de {record.name}&quot;)
+              </span>
+            </Label>
+          </div>
+          <Textarea
+            placeholder="Comentario opcional..."
+            value={comment}
+            onChange={(e) => setComment(e.target.value)}
+            className="resize-none border-2 border-black text-sm focus-visible:ring-0"
+            rows={2}
+          />
+        </div>
+        <DialogFooter className="border-t-2 border-black px-4 py-3">
+          <Button variant="outline" onClick={() => onOpenChange(false)} className="border-2 border-black">
+            Cancelar
+          </Button>
+          <Button
+            className="bg-rose-700 text-white hover:bg-rose-800"
+            onClick={() => {
+              onConfirm(comment)
+              setComment("")
+            }}
+          >
+            Liquidar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
 
 interface AssetListProps {
   topLevel: FinancialRecord[]
   all: FinancialRecord[]
-  onDelete?: (record: FinancialRecord, comment: string) => void
+  onLiquidate?: (record: FinancialRecord, comment: string, createIngreso: boolean) => void
+  onPhysicalDelete?: (record: FinancialRecord) => void
   onRemoveFromGroup?: (assetId: string) => void
   onDeleteGroup?: (record: FinancialRecord) => void
   selectMode?: boolean
@@ -22,7 +108,8 @@ interface AssetListProps {
 export function AssetList({
   topLevel,
   all,
-  onDelete,
+  onLiquidate,
+  onPhysicalDelete,
   onRemoveFromGroup,
   onDeleteGroup,
   selectMode,
@@ -34,8 +121,10 @@ export function AssetList({
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set())
-  const [pendingDelete, setPendingDelete] = useState<FinancialRecord | null>(null)
+  const [pendingLiquidate, setPendingLiquidate] = useState<FinancialRecord | null>(null)
+  const [pendingPhysicalDelete, setPendingPhysicalDelete] = useState<FinancialRecord | null>(null)
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState<FinancialRecord | null>(null)
+  const [liquidateCreateIngreso, setLiquidateCreateIngreso] = useState(true)
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
@@ -151,8 +240,14 @@ export function AssetList({
                     : "—"}
                 </div>
                 <div className="w-44 px-3 py-2 text-right">
-                  {formatAmount(record.amount, record.currency)}{" "}
-                  <span className="text-xs text-gray-400">{record.currency}</span>
+                  {isGroup && children.length > 0 ? (
+                    <GroupValueDisplay children={children} />
+                  ) : (
+                    <>
+                      {formatAmount(record.amount, record.currency)}{" "}
+                      <span className="text-xs text-gray-400">{record.currency}</span>
+                    </>
+                  )}
                 </div>
                 <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
                   <Link
@@ -173,11 +268,19 @@ export function AssetList({
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     ) : (
-                      onDelete && (
+                      (onLiquidate || onPhysicalDelete) && (
                         <button
-                          onClick={() => setPendingDelete(record)}
+                          onClick={() => {
+                            if (record.amount > 0) {
+                              setLiquidateCreateIngreso(true)
+                              setPendingLiquidate(record)
+                            } else {
+                              setPendingPhysicalDelete(record)
+                            }
+                          }}
                           className="text-gray-400 hover:text-rose-700"
-                          aria-label="Eliminar activo"
+                          aria-label={record.amount > 0 ? "Liquidar activo" : "Eliminar activo"}
+                          title={record.amount > 0 ? "Liquidar activo (pone balance en 0)" : "Eliminar activo definitivamente"}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -242,16 +345,31 @@ export function AssetList({
         )}
       </div>
 
-      {/* Delete individual asset */}
-      {pendingDelete && (
-        <ConfirmWithCommentDialog
-          open={!!pendingDelete}
-          onOpenChange={(o) => !o && setPendingDelete(null)}
-          title="Eliminar activo"
-          description={`"${pendingDelete.name}" se eliminará.`}
+      {/* Liquidar activo (balance > 0) */}
+      {pendingLiquidate && (
+        <LiquidarActivoDialog
+          open={!!pendingLiquidate}
+          record={pendingLiquidate}
+          createIngreso={liquidateCreateIngreso}
+          onCreateIngresoChange={setLiquidateCreateIngreso}
+          onOpenChange={(o) => !o && setPendingLiquidate(null)}
           onConfirm={(comment) => {
-            onDelete?.(pendingDelete, comment)
-            setPendingDelete(null)
+            onLiquidate?.(pendingLiquidate, comment, liquidateCreateIngreso)
+            setPendingLiquidate(null)
+          }}
+        />
+      )}
+
+      {/* Eliminar físicamente (balance = 0) */}
+      {pendingPhysicalDelete && (
+        <ConfirmWithCommentDialog
+          open={!!pendingPhysicalDelete}
+          onOpenChange={(o) => !o && setPendingPhysicalDelete(null)}
+          title="Eliminar activo"
+          description={`"${pendingPhysicalDelete.name}" tiene balance $0 y será eliminado definitivamente.`}
+          onConfirm={() => {
+            onPhysicalDelete?.(pendingPhysicalDelete)
+            setPendingPhysicalDelete(null)
           }}
         />
       )}

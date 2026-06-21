@@ -15,7 +15,7 @@ import {
 import { useFinance } from "@/components/finance-store"
 import { AssetList } from "@/components/activos/asset-list"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
-import { createGroup, removeFromGroup, deleteGroup, assignToGroup } from "@/lib/assets-actions"
+import { createGroup, removeFromGroup, deleteGroup, assignToGroup, liquidarActivo, physicalDeleteAsset } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
 
 export default function ActivosPage() {
@@ -39,8 +39,20 @@ export default function ActivosPage() {
     return true
   })
 
-  const handleDelete = (record: FinancialRecord, _comment: string) => {
-    deleteRecord(record)
+  const handleLiquidate = (record: FinancialRecord, comment: string, createIngreso: boolean) => {
+    startTransition(async () => {
+      await liquidarActivo(record.id, record.amount, record.currency, record.name, comment || undefined, createIngreso)
+      await reload()
+      router.refresh()
+    })
+  }
+
+  const handlePhysicalDelete = (record: FinancialRecord) => {
+    startTransition(async () => {
+      await physicalDeleteAsset(record.id)
+      await reload()
+      router.refresh()
+    })
   }
 
   const handleRemoveFromGroup = (assetId: string) => {
@@ -204,7 +216,8 @@ export default function ActivosPage() {
       <AssetList
         topLevel={topLevel}
         all={allActivos}
-        onDelete={handleDelete}
+        onLiquidate={handleLiquidate}
+        onPhysicalDelete={handlePhysicalDelete}
         onRemoveFromGroup={handleRemoveFromGroup}
         onDeleteGroup={handleDeleteGroup}
         selectMode={selectMode}
