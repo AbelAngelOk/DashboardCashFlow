@@ -113,66 +113,115 @@ export default function ActivosPage() {
 
   return (
     <div className="mx-auto max-w-5xl">
-      <div className="mb-4 flex items-center justify-between border-b-2 border-black pb-2">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-5 w-5" />
-          <span className="text-lg font-bold italic">Activos</span>
-        </div>
-        <div className="flex items-center gap-2">
-          {selectMode ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-2 border-2 border-black text-xs"
-              onClick={exitSelectMode}
-            >
-              <X className="h-3.5 w-3.5" />
-              Cancelar
-            </Button>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                className={`gap-2 border-2 border-black text-xs ${hideZero ? "bg-black text-white" : "bg-white text-black"}`}
-                onClick={() => setHideZero((v) => !v)}
-                title={hideZero ? "Mostrar activos en cero" : "Ocultar activos en cero"}
-              >
-                {hideZero ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
-                Balance cero
-              </Button>
+      <div className="mb-4 border-b-2 border-black pb-2">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="h-5 w-5" />
+            <span className="text-lg font-bold italic">Activos</span>
+          </div>
+          {/* Desktop buttons inline */}
+          <div className="hidden items-center gap-2 sm:flex">
+            {selectMode ? (
               <Button
                 size="sm"
                 variant="outline"
                 className="gap-2 border-2 border-black text-xs"
-                onClick={() => setSelectMode(true)}
+                onClick={exitSelectMode}
               >
-                <Network className="h-3.5 w-3.5" />
-                Agrupar
+                <X className="h-3.5 w-3.5" />
+                Cancelar
               </Button>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className={`gap-2 border-2 border-black text-xs ${hideZero ? "bg-black text-white" : "bg-white text-black"}`}
+                  onClick={() => setHideZero((v) => !v)}
+                  title={hideZero ? "Mostrar activos en cero" : "Ocultar activos en cero"}
+                >
+                  {hideZero ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                  Balance cero
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-2 border-2 border-black text-xs"
+                  onClick={() => setSelectMode(true)}
+                >
+                  <Network className="h-3.5 w-3.5" />
+                  Agrupar
+                </Button>
+                <Button
+                  size="sm"
+                  className="gap-2 bg-black text-white hover:bg-gray-800"
+                  onClick={() => setOpen(true)}
+                >
+                  <Plus className="h-4 w-4" />
+                  Nuevo activo
+                </Button>
+              </>
+            )}
+          </div>
+          {/* Mobile: only primary action visible inline */}
+          <div className="flex items-center gap-2 sm:hidden">
+            {selectMode ? (
               <Button
                 size="sm"
-                className="gap-2 bg-black text-white hover:bg-gray-800"
+                variant="outline"
+                className="gap-1.5 border-2 border-black text-xs"
+                onClick={exitSelectMode}
+              >
+                <X className="h-3.5 w-3.5" />
+                Cancelar
+              </Button>
+            ) : (
+              <Button
+                size="sm"
+                className="gap-1.5 bg-black text-white hover:bg-gray-800"
                 onClick={() => setOpen(true)}
               >
                 <Plus className="h-4 w-4" />
-                Nuevo activo
+                Nuevo
               </Button>
-            </>
-          )}
+            )}
+          </div>
         </div>
+        {/* Mobile: secondary actions below title */}
+        {!selectMode && (
+          <div className="mt-2 flex flex-wrap items-center gap-2 sm:hidden">
+            <Button
+              size="sm"
+              variant="outline"
+              className={`gap-1.5 border-2 border-black text-xs ${hideZero ? "bg-black text-white" : "bg-white text-black"}`}
+              onClick={() => setHideZero((v) => !v)}
+            >
+              {hideZero ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              Balance cero
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-1.5 border-2 border-black text-xs"
+              onClick={() => setSelectMode(true)}
+            >
+              <Network className="h-3.5 w-3.5" />
+              Agrupar
+            </Button>
+          </div>
+        )}
       </div>
 
       {/* Group action bar */}
       {selectMode && canGroup && (
-        <div className="mb-4 flex flex-wrap items-center gap-3 border-2 border-black bg-gray-50 px-4 py-3">
+        <div className="mb-4 flex flex-col gap-3 border-2 border-black bg-gray-50 px-4 py-3 sm:flex-wrap sm:flex-row sm:items-center">
           <span className="text-sm font-bold">
             {selectedIds.size} activos seleccionados
           </span>
 
           {/* Target: new group or existing */}
           <Select value={groupTarget} onValueChange={setGroupTarget}>
-            <SelectTrigger className="h-8 w-52 border-2 border-black text-xs focus:ring-0">
+            <SelectTrigger className="h-8 w-full border-2 border-black text-xs focus:ring-0 sm:w-52">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -191,14 +240,14 @@ export default function ActivosPage() {
               onChange={(e) => setGroupName(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleGroupAction()}
               placeholder="Nombre del grupo..."
-              className="h-8 w-48 border-2 border-black focus-visible:ring-0"
+              className="h-8 w-full border-2 border-black focus-visible:ring-0 sm:w-48"
               autoFocus
             />
           )}
 
           <Button
             size="sm"
-            className="bg-black text-white hover:bg-gray-800"
+            className="w-full bg-black text-white hover:bg-gray-800 sm:w-auto"
             onClick={handleGroupAction}
             disabled={(groupTarget === "new" && !groupName.trim()) || isPending}
           >

@@ -18,7 +18,7 @@ export function AppHeader() {
           <User className="h-3.5 w-3.5 text-white" />
         </div>
         {session?.user && (
-          <span className="text-xs font-semibold text-white">
+          <span className="max-w-[140px] truncate text-xs font-semibold text-white sm:max-w-none">
             {session.user.name ?? session.user.email}
           </span>
         )}

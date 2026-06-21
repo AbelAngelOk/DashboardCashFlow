@@ -109,8 +109,45 @@ export default function ObligacionesPage() {
         ))}
       </div>
 
-      {/* Table */}
-      <div className="border-2 border-black">
+      {/* Mobile: cards */}
+      <div className="flex flex-col gap-3 md:hidden">
+        {filtered.map((o) => (
+          <Link
+            key={o.id}
+            href={`/obligaciones/${o.id}`}
+            className="block border-2 border-black p-4 hover:bg-gray-50 active:bg-gray-100"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <span className="font-semibold leading-snug">{o.name}</span>
+              <span className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[o.status]}`}>
+                {OBLIGATION_STATUS_LABELS[o.status]}
+              </span>
+            </div>
+            <div className="mt-2 flex items-end justify-between gap-2">
+              <span className="text-xs text-gray-500">{OBLIGATION_TYPE_LABELS[o.obligationType]}</span>
+              <div className="text-right text-sm">
+                <ObligationValueCell obligation={o} />
+              </div>
+            </div>
+            {o.nextDueDate && (
+              <div className="mt-1.5 text-xs text-gray-400">
+                Próx. venc.: {formatObligationDate(o.nextDueDate)}
+              </div>
+            )}
+          </Link>
+        ))}
+
+        {filtered.length === 0 && (
+          <p className="py-6 text-center text-sm text-gray-500">
+            {filter === "ALL"
+              ? "No hay obligaciones. Creá la primera con el botón de arriba."
+              : `No hay obligaciones con estado "${OBLIGATION_STATUS_LABELS[filter as ObligationStatus]}".`}
+          </p>
+        )}
+      </div>
+
+      {/* Desktop: table */}
+      <div className="hidden border-2 border-black md:block">
         <div className="flex bg-black text-xs font-bold text-white">
           <div className="flex-1 px-3 py-2">Nombre</div>
           <div className="w-28 px-3 py-2">Tipo</div>

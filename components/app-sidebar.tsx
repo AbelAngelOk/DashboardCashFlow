@@ -58,7 +58,7 @@ export function AppSidebar() {
   return (
     <aside
       data-testid="app-sidebar"
-      className="flex w-56 shrink-0 flex-col border-r-2 border-black bg-gray-50"
+      className="hidden w-56 shrink-0 flex-col border-r-2 border-black bg-gray-50 lg:flex"
     >
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2 text-sm">
         {items.map(({ href, label, icon: Icon, badge }) => {

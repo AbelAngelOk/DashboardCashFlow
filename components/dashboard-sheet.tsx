@@ -391,7 +391,7 @@ function SectionTable({
           {valueLabel}
         </div>
         {hasLink && (
-          <div className="w-24 border-r border-black px-2 py-1 text-center">
+          <div className="hidden w-24 border-r border-black px-2 py-1 text-center sm:block">
             {linkLabel}
           </div>
         )}
@@ -428,7 +428,7 @@ function SectionTable({
                 />
               </div>
               {hasLink && (
-                <div className="flex w-24 items-center px-1 py-0.5">
+                <div className="hidden w-24 items-center px-1 py-0.5 sm:flex">
                   <Select
                     value={editDraft.linkedTo}
                     onValueChange={(v) =>
@@ -507,7 +507,7 @@ function SectionTable({
                 )}
               </div>
               {hasLink && (
-                <div className="w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500">
+                <div className="hidden w-24 border-r border-black px-2 py-1 text-center text-xs text-gray-500 sm:block">
                   {getLinkedName(record.linkedTo)}
                 </div>
               )}
@@ -555,7 +555,7 @@ function SectionTable({
                   <div className="w-36 border-r border-black px-2 py-1 text-right text-gray-600">
                     <RecordAmount record={child} />
                   </div>
-                  {hasLink && <div className="w-24 border-r border-black px-2 py-1" />}
+                  {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
                   {!readOnly && (
                     <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
                       <Link
@@ -605,7 +605,7 @@ function SectionTable({
           <div className="w-36 border-r border-black px-2 py-1 text-right text-sm">
             {row.valueNode}
           </div>
-          {hasLink && <div className="w-24 border-r border-black px-2 py-1" />}
+          {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
           {!readOnly && (
             <div className="flex w-16 items-center justify-center px-1">
               <Link href={row.href} className="text-gray-400 hover:text-black" aria-label="Ver obligación">
@@ -645,7 +645,7 @@ function SectionTable({
               />
             </div>
             {hasLink && (
-              <div className="flex w-24 items-center px-1 py-0.5">
+              <div className="hidden w-24 items-center px-1 py-0.5 sm:flex">
                 <Select
                   value={row.linkedTo}
                   onValueChange={(v) => updateNewRow(row.id, "linkedTo", v)}
