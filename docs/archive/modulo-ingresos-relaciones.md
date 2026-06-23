@@ -1,8 +1,10 @@
 # Módulo Ingresos — Análisis de relaciones y propuesta de formalización
 
+> ✅ **IMPLEMENTADO**: La página `/ingresos` existe (`app/(dashboard)/ingresos/page.tsx`) y muestra los ingresos agrupados por origen. La ruta está en la navegación lateral (sección Flujo de Caja) y en el drawer móvil. Este documento se conserva como referencia de los flujos de creación y las brechas de trazabilidad identificadas.
+
 ## Estado actual
 
-Los ingresos ya son `FinancialRecord` con `type="ingreso"` y persisten en la tabla `records`. Sin embargo, no tienen trazabilidad hacia su origen: ninguna de las 5 rutas de creación establece `linkedTo`, y no existe una página `/ingresos` ni una columna "Entidad relacionada" en el dashboard.
+Los ingresos son `FinancialRecord` con `type="ingreso"` y persisten en la tabla `records`. ~~No existe una página `/ingresos` ni una columna "Entidad relacionada" en el dashboard~~ → La página `/ingresos` ya existe. La trazabilidad via `linkedTo` sigue siendo una brecha pendiente.
 
 ## Flujos que crean ingresos hoy
 

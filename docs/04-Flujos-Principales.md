@@ -32,7 +32,7 @@
 
 1. El usuario autenticado accede a cualquier ruta del grupo `/(dashboard)`.
 2. El middleware (`proxy.ts`) verifica el JWT; si es válido, permite el acceso.
-3. El layout `/(dashboard)/layout.tsx` monta `SettingsProvider` → `FinanceProvider` → `AppShell`.
+3. El layout `/(dashboard)/layout.tsx` monta `SettingsProvider` → `FinanceProvider` → `ObligationsProvider` → `AppShell`.
 4. `FinanceProvider` ejecuta `useEffect` al montar, llamando a `loadData()` (Server Action):
    - Consulta en paralelo: `records` (sin `deletedAt`), `snapshots` (ordenados por fecha desc), `auditLogs` (ordenados por fecha desc).
    - Mapea los resultados de la DB a los tipos TypeScript del frontend.
@@ -68,7 +68,7 @@
    - Inserta el registro completo en `records` con campos extendidos (`ticker`, `assetType`, etc.).
    - Crea automáticamente un `FinancialMovement` de tipo `DEPOSIT` con la descripción "Inversión inicial".
 
-> **Incertidumbre**: Al revisar el código, el botón "Nuevo activo" llama a `onCreate` del `AssetFormDialog`, que mapea a `createRecord` del contexto. No queda claro si `createAsset` se llama también o si el `AssetFormDialog` llama directamente a la Server Action. Se requiere revisión adicional del archivo `components/activos/asset-form-dialog.tsx` para confirmar el flujo exacto.
+> **Aclaración** (flujo verificado): `AssetFormDialog.handleSave()` llama directamente a `createAsset()` (Server Action), que inserta el registro en DB y crea el `FinancialMovement` de tipo `DEPOSIT`. Luego llama a `reload()` del contexto para re-sincronizar el estado desde la DB. El AuditLog no se crea en este flujo (ver I-03 en `docs/estado-tecnico.md`).
 
 ---
 
@@ -157,17 +157,21 @@
 
 ---
 
-## Flujo 11: Log de movimientos y comentarios
+## Flujo 11: Historial de auditoría con paginación y filtros
 
-1. El usuario navega a `/movimientos`.
-2. La lista de `movements` se obtiene del `FinanceContext`.
-3. Cada entrada muestra: badge de acción (creado/editado/eliminado con colores), tipo, detalle, fecha, y un input de comentario editable.
-4. El usuario escribe en el campo de comentario.
-5. `updateComment(id, comment)` del `FinanceProvider`:
-   a. Actualiza el estado React inmediatamente.
-   b. Limpia el timer de debounce anterior para ese `id`.
-   c. Inicia un nuevo timer de 600ms.
-   d. Al vencer el timer, llama a `dbUpdateComment(id, comment)` (Server Action).
+1. El usuario navega a `/historial`.
+2. El `page.tsx` es un Server Component que envuelve en `<Suspense>` al `content.tsx`.
+3. `content.tsx` lee los query params de la URL (`page`, `pageSize`, `action`, `recordType`, `search`, `dateFrom`, `dateTo`) vía hooks dedicados:
+   - `useHistorialFilters()` — estado de filtros sincronizado con URL
+   - `usePagination()` — página actual y tamaño de página sincronizados con URL
+   - `useHistorialQuery()` — llama a `loadHistorial()` (Server Action) con los parámetros actuales
+4. `loadHistorial()` ejecuta query paginada en PostgreSQL con `skip + take` y devuelve `{ items, total }`.
+5. El usuario aplica filtros → la URL se actualiza → el hook detecta el cambio → nueva llamada a `loadHistorial()`.
+6. El usuario edita un comentario en una entrada:
+   a. Se actualiza el estado local inmediatamente (campo de texto responde al instante).
+   b. Debounce de 600ms → llama a `dbUpdateComment(id, comment)` (Server Action).
+
+> **Nota**: La ruta `/movimientos` también existe como página separada (`app/(dashboard)/movimientos/page.tsx`) y lee del `FinanceContext`. Ambas rutas coexisten; `/historial` es la implementación principal con paginación server-side.
 
 ---
 

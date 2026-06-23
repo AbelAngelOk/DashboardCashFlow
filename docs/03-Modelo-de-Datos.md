@@ -16,7 +16,10 @@ users
   ├──< snapshots (userId)
   ├──< financial_movements (userId)
   ├──< audit_logs / movements (userId)
-  └──< groups (userId)
+  ├──< groups (userId)
+  ├──< obligations (userId)
+  ├──< obligation_payments (userId)
+  └──< journal_entries (userId)
 
 records
   ├──< records (parentId → self-referencia para grupos)
@@ -33,6 +36,11 @@ groups
 record_groups [tabla pivote]
   ├── recordId → records
   └── groupId  → groups
+
+obligations
+  ├──< obligation_rules (obligationId)
+  ├──< obligation_installments (obligationId)
+  └──< obligation_payments (obligationId)
 ```
 
 ---
@@ -262,12 +270,16 @@ Log de auditoría de operaciones sobre records del dashboard.
 | `comment` | String | No | Comentario del usuario (default: `""`) |
 | `user_id` | String? | Sí | FK a `users.id` |
 | `record_id` | String? | Sí | FK a `records.id` |
+| `created_at` | DateTime | No | Timestamp de inserción real (default: now()) |
 
-**Índices**: `(user_id)`
+**Índices**:
+- `(user_id)` — por usuario
+- `(user_id, created_at)` — para paginación y filtrado por fecha en `/historial`
 
 **Notas**:
-- `date` es String, no DateTime. No puede ordenarse nativamente con funciones de fecha.
+- `date` es String, no DateTime — es el campo legado formateado en español. Para ordenación y filtros de fecha se usa `created_at` (DateTime real).
 - La tabla se llama `movements` en la DB pero `AuditLog` en Prisma, y `Movement` en el código TypeScript. Existe una ambigüedad de nomenclatura entre este log de auditoría y los `FinancialMovement` de activos.
+- La página `/historial` usa `created_at` para ordenación y filtros de rango de fecha a través de `loadHistorial()` (Server Action con paginación server-side).
 
 ---
 
@@ -329,6 +341,104 @@ Tabla pivote entre `records` y `groups`.
 **PK compuesta**: `(record_id, group_id)`
 
 ---
+
+## Módulo: Obligaciones
+
+Las obligaciones representan compromisos financieros periódicos (préstamos, cuotas, suscripciones, alquileres). El módulo está compuesto por cuatro tablas relacionadas.
+
+### Tabla: `obligations`
+
+Modelo Prisma: `Obligation`
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `user_id` | String | No | FK a `users.id` |
+| `obligation_type` | String | No | `"RECURRING"` \| `"INSTALLMENT"` \| `"FIXED"` |
+| `name` | String | No | Nombre de la obligación (ej: "Préstamo banco") |
+| `description` | String? | Sí | Descripción opcional |
+| `currency` | String | No | Moneda de la obligación |
+| `amount` | Decimal(18,4) | No | Monto base |
+| `status` | String | No | `"ACTIVE"` \| `"PAUSED"` \| `"COMPLETED"` \| `"CANCELLED"` (default: ACTIVE) |
+| `next_due_date` | DateTime? | Sí | Próxima fecha de vencimiento |
+| `created_at` | DateTime | No | Timestamp de creación (default: now()) |
+| `metadata` | Json? | Sí | Datos adicionales tipo-específicos |
+
+**Índices**:
+- `(user_id, status)` — para filtrar obligaciones activas por usuario
+- `(user_id, next_due_date)` — para ordenar por próximo vencimiento
+
+---
+
+### Tabla: `obligation_rules`
+
+Modelo Prisma: `ObligationRule`
+
+Reglas de recurrencia de una obligación periódica.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `obligation_id` | String | No | FK a `obligations.id` (cascade delete) |
+| `name` | String | No | Nombre de la regla |
+| `recurrence_type` | String | No | `"MONTHLY"` \| `"QUARTERLY"` \| `"SEMI_ANNUAL"` \| `"ANNUAL"` |
+| `start_date` | DateTime | No | Fecha de inicio de la recurrencia |
+| `expected_amount` | Decimal(18,4) | No | Monto esperado por cuota |
+| `currency` | String | No | Moneda |
+| `status` | String | No | `"ACTIVE"` \| `"PAUSED"` (default: ACTIVE) |
+| `metadata` | Json? | Sí | Datos adicionales |
+
+**Índices**: `(obligation_id)`
+
+---
+
+### Tabla: `obligation_installments`
+
+Modelo Prisma: `ObligationInstallment`
+
+Cuotas individuales generadas para una obligación de tipo INSTALLMENT.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `obligation_id` | String | No | FK a `obligations.id` (cascade delete) |
+| `installment_number` | Int | No | Número de cuota (1, 2, 3...) |
+| `due_date` | DateTime | No | Fecha de vencimiento de la cuota |
+| `expected_amount` | Decimal(18,4) | No | Monto esperado |
+| `status` | String | No | `"PENDING"` \| `"OVERDUE"` \| `"PAID"` \| `"REJECTED"` (default: PENDING) |
+| `gasto_record_id` | String? | Sí | FK a `records.id` del gasto asociado al pago |
+
+**Índices**:
+- `(obligation_id)` — para cargar cuotas de una obligación
+- `(due_date, status)` — para encontrar cuotas vencidas o próximas a vencer
+
+---
+
+### Tabla: `obligation_payments`
+
+Modelo Prisma: `ObligationPayment`
+
+Registro de pagos realizados contra una obligación.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `obligation_id` | String | No | FK a `obligations.id` (cascade delete) |
+| `user_id` | String | No | FK a `users.id` |
+| `rule_id` | String? | Sí | FK a `obligation_rules.id` (si aplica) |
+| `payment_type` | String | No | `"PAYMENT"` \| `"INTEREST"` \| `"FEE"` |
+| `expected_date` | DateTime? | Sí | Fecha esperada del pago |
+| `expected_amount` | Decimal(18,4)? | Sí | Monto esperado |
+| `currency` | String | No | Moneda del pago |
+| `gasto_record_id` | String? | Sí | FK a `records.id` del gasto vinculado al pago |
+| `status` | String | No | `"PENDING"` \| `"PAID"` \| `"REJECTED"` |
+| `comment` | String? | Sí | Comentario opcional |
+| `created_at` | DateTime | No | Timestamp de creación (default: now()) |
+
+**Índices**:
+- `(obligation_id)` — por obligación
+- `(user_id, expected_date)` — para agenda de pagos por usuario
+- `(rule_id)` — para ligar pagos a reglas de recurrencia
 
 ---
 

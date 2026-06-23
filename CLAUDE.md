@@ -31,14 +31,19 @@ NextAuth v4 with JWT strategy and bcrypt. Middleware in `proxy.ts` (not `middlew
 
 ### State layer
 
-Two React Contexts, both mounted in `app/(dashboard)/layout.tsx`:
+Three React Contexts mounted in `app/(dashboard)/layout.tsx`, plus one inside `AppShell`:
 
 **`FinanceProvider`** (`components/finance-store.tsx`) — financial data:
 - `records` — active `FinancialRecord[]` (dashboard, activos)
 - `snapshots` — `Snapshot[]`
-- `movements` — `Movement[]`, audit log shown in `/movimientos`
+- `movements` — `Movement[]`, audit log (used by `/movimientos`; `/historial` fetches server-side instead)
 - Mutations are **optimistic**: state updates immediately, DB write fires via `fire(promise)` in background. If the write fails, a toast error is shown (destructive variant).
 - `reload()` — re-fetches all data from DB; used after Server Actions that bypass the context (e.g. asset creation).
+
+**`ObligationsProvider`** (`components/obligations-store.tsx`) — obligations data:
+- `obligations` — `Obligation[]` with nested rules, installments, and payments
+- `reload()` — re-fetches obligations from DB
+- State is isolated from `FinanceProvider` to keep the obligations domain separate.
 
 **`SettingsProvider`** (`components/settings-store.tsx`) — configuration:
 - Exchange rates, display preferences, hidden/custom asset types
@@ -82,11 +87,11 @@ Per-field editing (name, ticker, assetType, description). Click field → edit m
 ### UI layout
 
 `app/layout.tsx` → `AuthProvider`
-`app/(dashboard)/layout.tsx` → `SettingsProvider` → `FinanceProvider` → `AppShell`
+`app/(dashboard)/layout.tsx` → `SettingsProvider` → `FinanceProvider` → `ObligationsProvider` → `AppShell`
 
 `AppShell` → `NotificationsProvider` → [column: `AppHeader` (full width) | row: `AppSidebar` + `<main>`] + `Toaster`
 
-`AppHeader` shows user name (left) and notification bell (right). `AppSidebar` shows nav links + sign-out button.
+`AppHeader` shows user name (left) and notification bell (right). `AppSidebar` shows domain-grouped nav sections (Inicio / Patrimonio / Flujo de Caja / Control / Auditoría / Configuración) with badges.
 
 ### Key reusable component
 
@@ -114,7 +119,7 @@ Three parallel layers — do not confuse them:
 | `/gastos` | `app/(dashboard)/gastos/page.tsx` | Expense list grouped by source |
 | `/ingresos` | `app/(dashboard)/ingresos/page.tsx` | Income list grouped by source |
 | `/libro-contable` | `app/(dashboard)/libro-contable/page.tsx` | Double-entry ledger view with account balances |
-| `/historial` | `app/(dashboard)/historial/page.tsx` | Audit log of CRUD events (renamed from /movimientos) |
+| `/historial` | `app/(dashboard)/historial/page.tsx` | Audit log with server-side pagination + URL-synced filters (Server Component + Suspense wrapper) |
 | `/snapshots` | `app/(dashboard)/snapshots/page.tsx` | List of saved snapshots |
 | `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Read-only snapshot view with account balances |
 | `/obligaciones` | `app/(dashboard)/obligaciones/page.tsx` | Obligations list |
@@ -174,6 +179,16 @@ For GROUP assets in `/activos/[id]`, the section order is fixed:
 3. AssetMovementsSection (Movimientos)
 No BoardManager for GROUP type.
 
+### Hooks (`hooks/`)
+
+| Hook | File | Purpose |
+|---|---|---|
+| `useHistorialFilters` | `hooks/use-historial-filters.ts` | URL-synced filter state for `/historial` (action, recordType, search, dateFrom, dateTo) |
+| `usePagination` | `hooks/use-pagination.ts` | URL-synced page + pageSize state; valid sizes are 10/25/50/100 |
+| `useHistorialQuery` | `hooks/use-historial-query.ts` | Fetches paginated audit log from `loadHistorial()` server action; stale-request cancellation via `reqId` ref; debounced comment persistence |
+| `useMobile` | `hooks/use-mobile.tsx` | Returns boolean based on `(max-width: 768px)` media query |
+| `useToast` | `hooks/use-toast.ts` | Toast notification state management (shadcn/ui) |
+
 ### Patterns to know
 
 - **Soft-delete**: assets and records use `deletedAt` timestamp; queries always filter `deletedAt: null`
@@ -181,8 +196,9 @@ No BoardManager for GROUP type.
 - **Asset deletion in /activos**: still calls `deleteRecord()` from context (soft-delete via `dbDeleteRecord`)
 - **Asset creation**: `AssetFormDialog` calls `createAsset()` (Server Action) then `reload()` — does NOT call `createRecord()` to avoid a duplicate DB insert
 - **`fire(promise)`**: fires a promise in the background; shows a destructive toast on error
-- **Debounce**: comment updates in `/movimientos` are debounced 600ms before DB write
+- **Debounce**: comment updates are debounced 600ms before DB write (both `/movimientos` and `/historial`)
 - **Multi-select filter**: `/activos` type filter is multi-select; buttons toggle, "Todos" clears selection
+- **URL-synced state**: `/historial` uses `useSearchParams()` + `router.replace()` for filters and pagination — requires Suspense boundary, hence the Server Component `page.tsx` wrapper
 
 ### Styling conventions
 

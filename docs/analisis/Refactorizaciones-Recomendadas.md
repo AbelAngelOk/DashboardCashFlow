@@ -6,24 +6,7 @@ Las siguientes refactorizaciones están ordenadas por impacto potencial y urgenc
 
 ## R-01: Conectar `AssetDetail` a la página de detalle de activo
 
-**Severidad**: Crítica
-**Relacionado con**: I-02, CM-01, CM-02
-
-**Problema**: La página `app/(dashboard)/activos/[id]/page.tsx` no importa `AssetDetail`, por lo que los 7 paneles tipo-específico (StockPanel, BondPanel, FuturesPanel, etc.) nunca se renderizan. El usuario no puede interactuar con ninguna funcionalidad avanzada de sus activos.
-
-**Cambio mínimo requerido**:
-
-```tsx
-// app/(dashboard)/activos/[id]/page.tsx
-
-// 1. Agregar import:
-import { AssetDetail } from "@/components/activos/asset-detail"
-
-// 2. En el JSX, luego de <AssetInfoSection>:
-<AssetDetail asset={asset} />
-```
-
-**Verificación post-cambio**: Navegar a un activo de tipo STOCK, FIXED_TERM, BOND, etc. y verificar que el panel tipo-específico aparece debajo de la información general.
+> ✅ **RESUELTO**: `AssetDetail` está importado y renderizado en `app/(dashboard)/activos/[id]/page.tsx`. Los 7 paneles tipo-específico se renderizan correctamente y los boards (DividendsBoard, CustomBoard) también están disponibles.
 
 ---
 
@@ -216,27 +199,7 @@ await prisma.$transaction([
 
 ## R-09: Corregir el incremento de `liquidationSuffix` en `FuturesPanel`
 
-**Severidad**: Media
-**Relacionado con**: I-08, CM-07
-
-**Problema**: Al liquidar un futuro, se crea un nuevo activo con nombre `"TICKER (2)"`. El `liquidationSuffix` nunca se actualiza, por lo que todas las liquidaciones sucesivas siempre serán `(2)`.
-
-**Corrección** en `handleLiquidate()`:
-```typescript
-// futures-panel.tsx
-const nextSuffix = (metadata?.liquidationSuffix ?? 1) + 1
-
-await updateAsset(assetId, {
-  metadata: {
-    ...metadata,
-    liquidated: true,
-    liquidationSuffix: nextSuffix
-  }
-})
-
-// Usar nextSuffix en el nombre del nuevo activo:
-const suggestedName = `${asset.ticker ?? asset.name} (${nextSuffix})`
-```
+> ✅ **RESUELTO**: `futures-panel.tsx` ya calcula el próximo sufijo con `(metadata?.liquidationSuffix ?? 1) + 1` y lo persiste en el metadata junto con `liquidated: true`.
 
 ---
 
@@ -269,31 +232,7 @@ Y actualizar `onDelete` en la firma del componente para aceptar el segundo pará
 
 ## R-11: Agregar notificación de error cuando `fire()` falla
 
-**Severidad**: Alta
-**Relacionado con**: RD-01, DT-06 (08-Riesgos-y-Deuda-Tecnica.md)
-
-**Problema**: La función `fire()` en `finance-store.tsx` captura errores silenciosamente:
-```typescript
-const fire = (p: Promise<unknown>) => p.catch(console.error)
-```
-
-Si una mutación falla (sesión expirada, error de red, error de DB), el usuario no recibe ninguna indicación. En la próxima recarga, sus cambios habrán desaparecido.
-
-**Corrección mínima**:
-```typescript
-// components/finance-store.tsx
-const fire = (p: Promise<unknown>) =>
-  p.catch((err) => {
-    console.error(err)
-    toast({
-      title: "Error al guardar",
-      description: err?.message?.includes("No autorizado")
-        ? "Tu sesión expiró. Recargá la página para volver a ingresar."
-        : "No se pudo guardar el cambio. Comprobá tu conexión.",
-      variant: "destructive",
-    })
-  })
-```
+> ✅ **RESUELTO**: `fire()` en `components/finance-store.tsx` muestra un toast destructivo al usuario cuando la escritura a la DB falla, en lugar de solo hacer `console.error`. El usuario recibe feedback visual en caso de error de red, sesión expirada o error de DB.
 
 ---
 
@@ -371,55 +310,35 @@ Verificar con `grep -r "theme-provider\|hooks/use-toast\|hooks/use-mobile" app/ 
 
 ## R-15: Migrar campos de fecha string a `DateTime` en DB
 
-**Severidad**: Media (impacta ordenación y queries futuras)
-**Relacionado con**: RD-04 (08-Riesgos-y-Deuda-Tecnica.md)
-
-**Problema**: `AuditLog.date` y `Snapshot.createdAt` son strings (`"19/06/2026, 14:30"`). Esto impide ordenar correctamente por fecha en la DB y filtrar por rangos.
-
-**Migración gradual**:
-1. Agregar columnas `date_ts DateTime?` y `created_at_ts DateTime?` en el schema.
-2. Hacer una migración de backfill que parsee los strings existentes a DateTime.
-3. Actualizar el código para escribir en la nueva columna.
-4. Cuando todos los registros tengan la nueva columna poblada, eliminar las columnas string.
-
-Este es un cambio riesgoso — requiere hacerlo en fases para no perder datos existentes.
+> ⚠️ **PARCIALMENTE RESUELTO** (2026-06-23): Se agregó `createdAt DateTime @default(now())` al modelo `AuditLog` (tabla `movements`). Ahora la página `/historial` ordena y filtra por `createdAt` en lugar del string `date`. El campo string `date` se mantiene para mostrar la fecha formateada en la UI.
+>
+> **Pendiente**: `Snapshot.createdAt` sigue siendo String. La migración de ese campo requiere backfill ya que el campo no tiene un equivalente DateTime real.
 
 ---
 
 ## R-16: Actualizar `CLAUDE.md` para reflejar la arquitectura real
 
-**Severidad**: Media (afecta productividad del equipo)
-**Relacionado con**: I-01, DT-01 (08-Riesgos-y-Deuda-Tecnica.md)
-
-**Problema**: `CLAUDE.md` describe incorrectamente el sistema como "sin base de datos, sin localStorage, sin API". La arquitectura actual tiene PostgreSQL (Supabase), NextAuth, Prisma, Server Actions, y localStorage para configuración.
-
-**Acción**: Reescribir la sección "Architecture" de `CLAUDE.md` para incluir:
-- Stack: Next.js App Router + React Context + Prisma + PostgreSQL (Supabase) + NextAuth
-- Dos contextos: `FinanceContext` (datos financieros, DB) y `SettingsContext` (configuración, localStorage)
-- Server Actions en `lib/actions.ts` y `lib/assets-actions.ts`
-- Autenticación: NextAuth v4, JWT, bcrypt, middleware en `proxy.ts`
-- Persistencia de configuración: `localStorage` key `cashflow:settings`
-- Patrones importantes: mutaciones optimistas con `fire()`, debounce de comentarios, soft-delete
+> ✅ **RESUELTO** (2026-06-23): `CLAUDE.md` fue reescrito completamente. Documenta el stack real (Next.js App Router, PostgreSQL/Supabase, Prisma, NextAuth v4), los tres context providers, los patrones de mutación optimista, las capas de persistencia, las Server Actions, los hooks nuevos de historial, y las convenciones de estilos.
 
 ---
 
 ## Resumen de prioridades
 
-| Prioridad | ID | Refactorización | Esfuerzo estimado |
+| Estado | ID | Refactorización | Esfuerzo estimado |
 |---|---|---|---|
-| 🔴 Crítica | R-01 | Conectar `AssetDetail` a la página (activa 7 paneles) | 5 min |
+| ✅ RESUELTO | R-01 | Conectar `AssetDetail` a la página (activa 7 paneles) | — |
 | 🔴 Crítica | R-04 | Corregir cálculo `amount` en TradingPanel | 5 min |
 | 🔴 Crítica | R-05 | Corregir acumulación de posiciones en FuturesPanel | 10 min |
 | 🔴 Alta | R-02 | Eliminar doble creación en `AssetFormDialog` | 30 min |
-| 🔴 Alta | R-11 | Agregar notificación de error en `fire()` | 20 min |
+| ✅ RESUELTO | R-11 | Agregar notificación de error en `fire()` | — |
 | 🟠 Alta | R-03 | Unificar comportamiento de eliminación de activo | 30 min |
 | 🟠 Alta | R-06 | Corregir closure obsoleto en `RebalanceBotPanel` | 20 min |
 | 🟡 Media | R-07 | Advertencia en `GroupBreakdownDialog` multi-moneda | 10 min |
 | 🟡 Media | R-08 | Corregir `collectFixedTerm()` | 15 min |
-| 🟡 Media | R-09 | Incrementar `liquidationSuffix` en liquidación | 10 min |
+| ✅ RESUELTO | R-09 | Incrementar `liquidationSuffix` en liquidación | — |
 | 🟡 Media | R-10 | Propagar comentario en eliminación de activos | 10 min |
 | 🟡 Media | R-14 | Limpiar schema `Group`/`RecordGroup` | 1 hora |
-| 🟡 Media | R-15 | Migrar fechas string a DateTime | 2-4 horas |
-| 🟡 Media | R-16 | Actualizar CLAUDE.md | 30 min |
+| ⚠️ PARCIAL | R-15 | Migrar fechas string a DateTime (AuditLog resuelto, Snapshot pendiente) | 2-4 horas |
+| ✅ RESUELTO | R-16 | Actualizar CLAUDE.md | — |
 | 🟢 Baja | R-12 | Limpiar paquetes npm sin uso | 1 hora |
 | 🟢 Baja | R-13 | Eliminar archivos duplicados/muertos | 15 min |

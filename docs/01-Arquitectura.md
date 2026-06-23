@@ -23,22 +23,33 @@
 ### Modelo de capas
 
 ```
-app/layout.tsx                  ← RootLayout: AuthProvider + Vercel Analytics
-  └── app/(dashboard)/layout.tsx ← DashboardLayout: SettingsProvider + FinanceProvider + AppShell
-        ├── components/app-shell.tsx       ← Layout con sidebar y área de contenido
-        ├── components/app-sidebar.tsx     ← Navegación lateral con badges dinámicos
-        └── app/(dashboard)/<ruta>/page.tsx ← Páginas de cada sección
+app/layout.tsx                        ← RootLayout: AuthProvider + Vercel Analytics
+  └── app/(dashboard)/layout.tsx      ← DashboardLayout:
+        ├── SettingsProvider          ← Configuración y tasas de cambio (localStorage)
+        ├── FinanceProvider           ← Datos financieros: records, snapshots, movements (DB)
+        ├── ObligationsProvider       ← Estado de obligaciones financieras (DB)
+        └── AppShell                  ← Layout principal
+              ├── NotificationsProvider ← Notificaciones de dividendos pendientes (client-side)
+              ├── AppHeader           ← Cabecera con nombre de usuario y campana
+              ├── AppSidebar          ← Navegación lateral por dominios funcionales con badges
+              ├── <main>              ← Área de contenido con las páginas
+              └── AppBottomNav        ← Navegación móvil (4 tabs + drawer "Más")
 ```
 
 ### Gestión de estado
 
-El estado de la aplicación se gestiona mediante dos React Context providers anidados:
+El estado de la aplicación se gestiona mediante tres React Context providers anidados:
 
 **`FinanceProvider`** (`components/finance-store.tsx`):
 - Carga los datos del usuario desde la base de datos al montar (`loadData()`).
 - Expone `records`, `snapshots`, `movements`.
-- Mutaciones optimistas: actualiza el estado local inmediatamente y dispara la escritura a la DB en segundo plano (`fire(promise)`). Los errores se loguean a la consola pero no revierten el estado.
+- Mutaciones optimistas: actualiza el estado local inmediatamente y dispara la escritura a la DB en segundo plano (`fire(promise)`). Si la escritura falla, muestra un toast destructivo al usuario.
 - Los comentarios en el log de movimientos se persisten con debounce de 600ms.
+
+**`ObligationsProvider`** (`components/obligations-store.tsx`):
+- Carga las obligaciones del usuario desde la DB al montar.
+- Expone `obligations` (con reglas, cuotas y pagos incluidos) y `reload()`.
+- Estado aislado del `FinanceProvider` para separar el dominio de obligaciones.
 
 **`SettingsProvider`** (`components/settings-store.tsx`):
 - Persiste la configuración del dashboard en `localStorage` bajo la clave `cashflow:settings`.
@@ -59,11 +70,16 @@ El estado de la aplicación se gestiona mediante dos React Context providers ani
 | `/gastos` | `app/(dashboard)/gastos/page.tsx` | Client Component |
 | `/ingresos` | `app/(dashboard)/ingresos/page.tsx` | Client Component |
 | `/libro-contable` | `app/(dashboard)/libro-contable/page.tsx` | Client Component |
-| `/historial` | `app/(dashboard)/historial/page.tsx` | Client Component |
-| `/movimientos` | redirect → `/historial` | — |
+| `/historial` | `app/(dashboard)/historial/page.tsx` | Server Component (Suspense wrapper) |
+| `/historial` content | `app/(dashboard)/historial/content.tsx` | Client Component |
+| `/movimientos` | `app/(dashboard)/movimientos/page.tsx` | Client Component (coexiste con `/historial`) |
+| `/obligaciones` | `app/(dashboard)/obligaciones/page.tsx` | Client Component |
+| `/obligaciones/[id]` | `app/(dashboard)/obligaciones/[id]/page.tsx` | Client Component |
 | `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Client Component |
 
-> **Nota**: `/activos/[id]` es un Server Component que llama directamente a `loadAsset()` (Server Action). El resto de las páginas del dashboard consumen datos a través del `FinanceContext`.
+> **Nota 1**: `/activos/[id]` es un Server Component que llama directamente a `loadAsset()` (Server Action). El resto de las páginas del dashboard consumen datos a través del contexto correspondiente.
+>
+> **Nota 2**: `/historial` usa una arquitectura diferente al resto: el `page.tsx` es un Server Component que envuelve en `<Suspense>` al `content.tsx` (Client Component). Esto permite URL-sync con `useSearchParams()` sin errores de hidratación. La data se obtiene via `loadHistorial()` (Server Action) con paginación server-side y filtros sincronizados con query params.
 
 ### Capas de registro financiero
 

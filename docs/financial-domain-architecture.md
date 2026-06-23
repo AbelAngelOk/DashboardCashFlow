@@ -241,16 +241,22 @@ flowchart TD
 ### 7.2 Flujo de navegación propuesto
 
 ```
-SIDEBAR
-├── Dashboard            /
-├── Activos              /activos
-├── Obligaciones         /obligaciones
-├── Gastos               /gastos
-├── Ingresos             /ingresos
-├── Libro Contable  ✦    /libro-contable    ← NUEVO
-├── Historial            /historial         ← RENOMBRADO (era Movimientos)
-├── Snapshots            /snapshots
-└── Personalización      /configuracion
+SIDEBAR (agrupado por dominios funcionales)
+├── [Inicio]
+│   └── Dashboard            /
+├── [Patrimonio]
+│   ├── Activos              /activos
+│   └── Obligaciones         /obligaciones
+├── [Flujo de Caja]
+│   ├── Ingresos             /ingresos
+│   └── Gastos               /gastos
+├── [Control]
+│   ├── Snapshots            /snapshots
+│   └── Libro Contable  ✦    /libro-contable
+├── [Auditoría]
+│   └── Historial            /historial     ← RENOMBRADO (era Movimientos)
+└── [Configuración]
+    └── Personalización      /configuracion
 ```
 
 ---

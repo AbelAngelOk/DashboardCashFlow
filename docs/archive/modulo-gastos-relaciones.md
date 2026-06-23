@@ -1,5 +1,7 @@
 # Módulo Gastos — Relaciones, Arquitectura e Implementación
 
+> ✅ **IMPLEMENTADO**: La página `/gastos` existe (`app/(dashboard)/gastos/page.tsx`) y muestra los gastos agrupados por origen. La ruta está en la navegación lateral (sección Flujo de Caja) y en el drawer móvil. Este documento se conserva como referencia de las relaciones entre entidades y los flujos de creación.
+
 ## Estado actual
 
 ### Entidad Gasto
@@ -20,7 +22,7 @@ records
   operationDate DateTime?
 ```
 
-No existe ruta `/gastos`. Los gastos solo son visibles como filas en la tabla "Gastos" del Dashboard.
+~~No existe ruta `/gastos`.~~ La página `/gastos` está implementada (`app/(dashboard)/gastos/page.tsx`). Los gastos también son visibles como filas en la tabla "Gastos" del Dashboard.
 
 ---
 

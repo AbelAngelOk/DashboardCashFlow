@@ -258,3 +258,74 @@ export async function dbUpdateComment(id: string, comment: string) {
     data: { comment },
   })
 }
+
+// ── Historial paginado ────────────────────────────────────────────────────────
+
+export type HistorialParams = {
+  page: number
+  pageSize: number
+  action?: string
+  recordType?: string
+  search?: string
+  dateFrom?: string  // "YYYY-MM-DD"
+  dateTo?: string    // "YYYY-MM-DD"
+}
+
+export type HistorialResult = {
+  items: Movement[]
+  total: number
+}
+
+export async function loadHistorial(params: HistorialParams): Promise<HistorialResult> {
+  const userId = await getUserId()
+  const { page, pageSize, action, recordType, search, dateFrom, dateTo } = params
+
+  const safePageSize = [10, 25, 50, 100].includes(pageSize) ? pageSize : 25
+  const safePage = Math.max(1, page)
+  const term = search?.trim()
+
+  const where = {
+    userId,
+    ...(action ? { action } : {}),
+    ...(recordType ? { recordType } : {}),
+    ...(term
+      ? {
+          OR: [
+            { recordName: { contains: term, mode: "insensitive" as const } },
+            { detail: { contains: term, mode: "insensitive" as const } },
+          ],
+        }
+      : {}),
+    ...(dateFrom || dateTo
+      ? {
+          createdAt: {
+            ...(dateFrom ? { gte: new Date(dateFrom) } : {}),
+            ...(dateTo ? { lte: new Date(`${dateTo}T23:59:59.999Z`) } : {}),
+          },
+        }
+      : {}),
+  }
+
+  const [total, dbItems] = await Promise.all([
+    prisma.auditLog.count({ where }),
+    prisma.auditLog.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (safePage - 1) * safePageSize,
+      take: safePageSize,
+    }),
+  ])
+
+  return {
+    total,
+    items: dbItems.map((m) => ({
+      id: m.id,
+      date: m.date,
+      action: m.action as MovementAction,
+      recordType: m.recordType as RecordType,
+      recordName: m.recordName,
+      detail: m.detail,
+      comment: m.comment,
+    })),
+  }
+}

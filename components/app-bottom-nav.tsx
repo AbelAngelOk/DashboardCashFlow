@@ -17,23 +17,52 @@ import {
   ShoppingCart,
   TrendingDown,
   BookOpen,
+  type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-const mainItems = [
+type NavItem = {
+  href: string
+  label: string
+  icon: LucideIcon
+}
+
+type DrawerSection = {
+  title: string
+  items: NavItem[]
+}
+
+const mainItems: NavItem[] = [
   { href: "/", label: "Inicio", icon: LayoutDashboard },
   { href: "/activos", label: "Activos", icon: TrendingUp },
   { href: "/obligaciones", label: "Obligac.", icon: FileText },
   { href: "/historial", label: "Historial", icon: History },
 ]
 
-const moreItems = [
-  { href: "/gastos", label: "Gastos", icon: ShoppingCart },
-  { href: "/ingresos", label: "Ingresos", icon: TrendingDown },
-  { href: "/libro-contable", label: "Libro Contable", icon: BookOpen },
-  { href: "/snapshots", label: "Snapshots", icon: Camera },
-  { href: "/configuracion", label: "Personalización", icon: Settings2 },
+const drawerSections: DrawerSection[] = [
+  {
+    title: "Flujo de Caja",
+    items: [
+      { href: "/ingresos", label: "Ingresos", icon: TrendingDown },
+      { href: "/gastos", label: "Gastos", icon: ShoppingCart },
+    ],
+  },
+  {
+    title: "Control",
+    items: [
+      { href: "/snapshots", label: "Snapshots", icon: Camera },
+      { href: "/libro-contable", label: "Libro Contable", icon: BookOpen },
+    ],
+  },
+  {
+    title: "Configuración",
+    items: [
+      { href: "/configuracion", label: "Personalización", icon: Settings2 },
+    ],
+  },
 ]
+
+const allDrawerItems = drawerSections.flatMap((s) => s.items)
 
 export function AppBottomNav() {
   const pathname = usePathname()
@@ -42,11 +71,10 @@ export function AppBottomNav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href)
 
-  const isMoreActive = moreItems.some((item) => isActive(item.href))
+  const isMoreActive = allDrawerItems.some((item) => isActive(item.href))
 
   return (
     <>
-      {/* Backdrop */}
       {moreOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/30 lg:hidden"
@@ -54,7 +82,6 @@ export function AppBottomNav() {
         />
       )}
 
-      {/* "Más" drawer — slides up from above the bottom nav */}
       {moreOpen && (
         <div className="fixed bottom-16 left-0 right-0 z-50 border-t-2 border-black bg-white shadow-xl lg:hidden">
           <div className="flex items-center justify-between border-b border-gray-100 px-4 py-2">
@@ -68,19 +95,26 @@ export function AppBottomNav() {
             </button>
           </div>
 
-          {moreItems.map(({ href, label, icon: Icon }) => (
-            <Link
-              key={href}
-              href={href}
-              onClick={() => setMoreOpen(false)}
-              className={cn(
-                "flex items-center gap-3 border-b border-gray-100 px-6 py-4 text-sm font-semibold",
-                isActive(href) ? "bg-black text-white" : "text-gray-700 hover:bg-gray-50",
-              )}
-            >
-              <Icon className="h-5 w-5" />
-              {label}
-            </Link>
+          {drawerSections.map((section) => (
+            <div key={section.title}>
+              <p className="px-4 pb-1 pt-3 text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                {section.title}
+              </p>
+              {section.items.map(({ href, label, icon: Icon }) => (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMoreOpen(false)}
+                  className={cn(
+                    "flex items-center gap-3 border-b border-gray-100 px-6 py-3.5 text-sm font-semibold",
+                    isActive(href) ? "bg-black text-white" : "text-gray-700 hover:bg-gray-50",
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  {label}
+                </Link>
+              ))}
+            </div>
           ))}
 
           <button
@@ -93,7 +127,6 @@ export function AppBottomNav() {
         </div>
       )}
 
-      {/* Bottom navigation bar */}
       <nav
         data-testid="app-bottom-nav"
         className="fixed bottom-0 left-0 right-0 z-50 flex h-16 shrink-0 border-t-2 border-black bg-white lg:hidden"

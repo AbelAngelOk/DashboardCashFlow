@@ -2,62 +2,13 @@
 
 ## I-01: CLAUDE.md describe una arquitectura que no existe
 
-**Severidad**: Alta
-
-**Evidencia**:
-El archivo `CLAUDE.md` (línea 6) dice:
-> "All application state lives in memory inside a single React Context. There is no database, no localStorage, no API — data resets on page refresh."
-
-La realidad actual del proyecto:
-- Hay una base de datos PostgreSQL (Supabase)
-- Hay persistencia en `localStorage` (configuración de divisas, clave `cashflow:settings`)
-- Hay Server Actions que actúan como API
-- Los datos persisten entre recargas de página y entre sesiones
-
-**Archivos involucrados**: `CLAUDE.md`, `lib/db.ts`, `lib/actions.ts`, `lib/assets-actions.ts`, `components/settings-store.tsx`
-
-**Recomendación**: Reescribir el `CLAUDE.md` para que refleje la arquitectura actual con Supabase, NextAuth, Prisma, Server Actions y localStorage para configuración.
+> ✅ **RESUELTO** (2026-06-23): `CLAUDE.md` fue reescrito completamente. Ahora documenta el stack real (Next.js App Router, PostgreSQL/Supabase, Prisma, NextAuth v4), los tres context providers (`FinanceProvider`, `ObligationsProvider`, `SettingsProvider`), los patrones de mutación optimista con `fire()`, las capas de persistencia, y las convenciones de estilos.
 
 ---
 
 ## I-02: `AssetDetail` (componente dispatcher) no es usado por la página
 
-**Severidad**: Crítica
-
-**Evidencia**:
-El componente `components/activos/asset-detail.tsx` es un dispatcher `switch` que enruta a `StockPanel`, `BondPanel`, `FuturesPanel`, `TradingBotPanel`, `RebalanceBotPanel`, `TradingPanel`, y `FixedTermPanel` según el tipo de activo.
-
-Sin embargo, la página `app/(dashboard)/activos/[id]/page.tsx` importa únicamente:
-```typescript
-import { AssetInfoSection } from "@/components/activos/asset-info-section"
-import { AssetMovementsSection } from "@/components/activos/asset-movements-section"
-import { AssetTrackingSection } from "@/components/activos/asset-tracking-section"
-```
-
-`AssetDetail` no aparece en ningún `import` ni en el JSX de la página. Por tanto, **ningún panel tipo-específico se renderiza nunca**. El usuario que navega a `/activos/[id]` ve solo la información general, el historial de movimientos genérico, y la tabla de seguimiento — independientemente de si el activo es un bono, un plazo fijo, un stock, etc.
-
-**Consecuencias concretas**:
-- Los dividendos de acciones (`StockPanel`) son invisibles para el usuario
-- El cobro de plazo fijo (`FixedTermPanel`) no está disponible en la UI
-- El cronograma de bonos (`BondPanel`) no se muestra
-- Los agregados del bot de trading (`TradingBotPanel`) no se muestran
-- Las posiciones de futuros (`FuturesPanel`) no se muestran
-- Los aportes/extracciones del bot de rebalanceo (`RebalanceBotPanel`) no están accesibles
-
-**Archivos involucrados**:
-- `components/activos/asset-detail.tsx` (componente orphaned)
-- `app/(dashboard)/activos/[id]/page.tsx` (no importa AssetDetail)
-- `components/activos/panels/*.tsx` (todos inaccessibles)
-
-**Recomendación**: Agregar el componente `AssetDetail` a la página del detalle de activo:
-
-```tsx
-// En app/(dashboard)/activos/[id]/page.tsx
-import { AssetDetail } from "@/components/activos/asset-detail"
-
-// En el JSX, después de AssetInfoSection:
-<AssetDetail asset={asset} />
-```
+> ✅ **RESUELTO**: `components/activos/asset-detail.tsx` está correctamente importado y renderizado en `app/(dashboard)/activos/[id]/page.tsx`. Los 7 paneles tipo-específico (StockPanel, BondPanel, FuturesPanel, etc.) se renderizan según el `assetType` del activo. Los `BoardManager` y boards (Dividendos, Tablero personalizado) también están conectados.
 
 ---
 
@@ -204,22 +155,7 @@ El resultado es que el estado "cobrado" del `FixedTermPanel` es código muerto: 
 
 ## I-08: `FuturesMetadata.liquidationSuffix` nunca se incrementa
 
-**Severidad**: Baja
-
-**Evidencia**:
-El tipo `FuturesMetadata` define `liquidationSuffix?: number`. En `FuturesPanel`, cuando el futuro está liquidado, se muestra un botón "Nueva operación" y el nombre sugerido es:
-
-```typescript
-const suggestedName = `${asset.ticker ?? asset.name} (${(metadata?.liquidationSuffix ?? 2)})`
-```
-
-El valor por defecto es `2`, pero `liquidationSuffix` nunca se escribe. Al liquidar un futuro, solo se establece `liquidated: true` en el metadata, pero no se incrementa `liquidationSuffix`. Entonces cada vez que se liquide y cree una nueva operación, el nombre sugerido siempre será `"TICKER (2)"` en lugar de incrementar al 3, 4, etc.
-
-**Archivos involucrados**:
-- `components/activos/panels/futures-panel.tsx` (líneas 141-148, 168)
-- `lib/assets.ts` (tipo `FuturesMetadata`)
-
-**Recomendación**: Al liquidar, calcular el próximo sufijo (`(liquidationSuffix ?? 1) + 1`) y guardarlo en el metadata junto con `liquidated: true`.
+> ✅ **RESUELTO**: `futures-panel.tsx` ya calcula e incrementa `liquidationSuffix` correctamente al liquidar una posición. El próximo sufijo se escribe en el metadata junto con `liquidated: true`.
 
 ---
 

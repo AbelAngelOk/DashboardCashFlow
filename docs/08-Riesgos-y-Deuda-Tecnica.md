@@ -97,11 +97,9 @@ Actualmente la ordenación de `AuditLog` se hace por el campo `date` como string
 
 ### DT-01: CLAUDE.md desactualizado — describe una arquitectura que ya no es actual
 
-**Severidad**: Media
+~~**Severidad**: Media~~
 
-**Descripción**: El archivo `CLAUDE.md` describe el sistema como "sin base de datos, sin localStorage, sin API — datos resetean on page refresh". Esto era cierto en las primeras versiones pero ya no lo es: el sistema tiene PostgreSQL (Supabase), NextAuth, Prisma, y datos persistentes.
-
-**Impacto**: Confusión para desarrolladores que lean el CLAUDE.md y asuman que no hay backend.
+> ✅ **RESUELTO** (2026-06-23): `CLAUDE.md` fue reescrito completamente para reflejar la arquitectura actual con PostgreSQL (Supabase), NextAuth, Prisma, Server Actions, y los tres context providers. El archivo ahora documenta el stack real, las capas de persistencia, los patrones de mutación optimista, y las convenciones de estilos.
 
 ---
 
@@ -123,7 +121,7 @@ Actualmente la ordenación de `AuditLog` se hace por el campo `date` como string
 1. `Movement` / `AuditLog` (`lib/finance.ts`, tabla `movements`) — Log de auditoría de cambios en registros del dashboard.
 2. `AssetFinancialMovement` / `FinancialMovement` (`lib/assets.ts`, tabla `financial_movements`) — Historial de operaciones financieras en activos.
 
-El mismo término "movimiento" se usa para dos cosas distintas, lo que puede generar confusión. La página `/movimientos` muestra el log de auditoría, no los movimientos financieros de activos.
+El mismo término "movimiento" se usa para dos cosas distintas, lo que puede generar confusión. La ruta principal del log de auditoría ahora es `/historial` (con paginación server-side y filtros URL-synced); la ruta `/movimientos` coexiste como implementación anterior que lee del `FinanceContext`.
 
 ---
 
@@ -145,11 +143,9 @@ El mismo término "movimiento" se usa para dos cosas distintas, lo que puede gen
 
 ### DT-06: Sin manejo de error de sesión expirada en mutaciones
 
-**Severidad**: Media
+~~**Severidad**: Media~~
 
-**Descripción**: Cuando un JWT expira durante una sesión activa, las Server Actions lanzarán `Error("No autorizado")`. Esta excepción es capturada por la función `fire()` que solo hace `console.error`, sin notificar al usuario ni redirigirlo al login.
-
-**Escenario**: El usuario lleva horas en el dashboard, su sesión expira, hace cambios → los cambios no se guardan sin ninguna indicación visual.
+> ✅ **RESUELTO** (2026-06-23): La función `fire()` en `components/finance-store.tsx` ahora captura el error y muestra un toast destructivo al usuario ("Error al guardar los cambios"), en lugar de solo hacer `console.error`. El usuario recibe feedback visual cuando la escritura a la DB falla, incluido el caso de sesión expirada.
 
 ---
 
@@ -242,8 +238,8 @@ El mismo término "movimiento" se usa para dos cosas distintas, lo que puede gen
 |---|---|---|---|
 | 1 | RS-01: Credenciales en .env | Alta | Verificar .gitignore y rotar credenciales si fue commiteado |
 | 2 | RD-01: Mutaciones sin rollback | Alta | Agregar notificación de error al usuario cuando `fire()` falla |
-| 3 | DT-01: CLAUDE.md desactualizado | Media | Actualizar la documentación interna |
-| 4 | DT-06: Sesión expirada silenciosa | Media | Detectar error 401 en Server Actions y redirigir a login |
+| 3 | ~~DT-01: CLAUDE.md desactualizado~~ | ~~Media~~ | ✅ RESUELTO |
+| 4 | ~~DT-06: Sesión expirada silenciosa~~ | ~~Media~~ | ✅ RESUELTO — fire() muestra toast destructivo |
 | 5 | DT-07: Sin tests | Media | Agregar tests de las funciones de cálculo financiero |
 | 6 | RS-02: Validación de contraseña solo en cliente | Media | Agregar validación en `registerUser()` |
 | 7 | RD-04: Strings de fecha | Media | Migrar a DateTime en futura iteración |

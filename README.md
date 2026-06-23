@@ -1,33 +1,45 @@
 # DashboardCashFlow
 
-This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
+Personal finance dashboard for tracking assets, liabilities, income, expenses, obligations, and net worth snapshots.
 
-## Built with v0
+## Stack
 
-This repository is linked to a [v0](https://v0.app) project. You can continue developing by visiting the link below -- start new chats to make changes, and v0 will push commits directly to this repo. Every merge to `main` will automatically deploy.
+| Layer | Tech |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Language | TypeScript 5.7 |
+| UI | React 19 + shadcn/ui + Tailwind CSS v4 |
+| ORM | Prisma 7 |
+| Database | PostgreSQL (Supabase, São Paulo) |
+| Auth | NextAuth v4 (JWT + bcrypt) |
+| Icons | lucide-react |
 
-[Continue working on v0 →](https://v0.app/chat/projects/prj_lic5srji6V3je1nLcuKdtBeSO3l6)
-
-## Getting Started
-
-First, run the development server:
+## Commands
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
+npm run dev      # Start dev server at http://localhost:3000
+npm run build    # Production build
+./node_modules/.bin/tsc --noEmit   # Type check (build ignores TS errors)
+npx prisma db push                  # Apply schema changes to DB
+npx prisma generate                 # Regenerate Prisma client
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Architecture
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- **State**: Three React contexts — `FinanceProvider` (financial data, DB), `ObligationsProvider` (obligations, DB), `SettingsProvider` (config, localStorage)
+- **Mutations**: Optimistic — state updates immediately, DB write fires in background via `fire(promise)`. On error, shows a destructive toast.
+- **Server Actions**: `lib/actions.ts`, `lib/assets-actions.ts`, `lib/obligation-actions.ts`, `lib/journal-actions.ts`
+- **Auth middleware**: `proxy.ts` (not `middleware.ts`)
+- **Design**: Monochrome — `border-2 border-black`, no shadows, emerald/amber/rose for status badges only
 
-## Learn More
+## Docs
 
-To learn more, take a look at the following resources:
+See [docs/](docs/) for full documentation.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-- [v0 Documentation](https://v0.app/docs) - learn about v0 and how to use it.
+- [Architecture](docs/01-Arquitectura.md)
+- [Data Model](docs/03-Modelo-de-Datos.md)
+- [Main Flows](docs/04-Flujos-Principales.md)
+- [Financial Domain Architecture](docs/financial-domain-architecture.md)
+- [Historial Pagination](docs/historial-paginacion.md)
+- [Technical Status](docs/estado-tecnico.md)
+- [Risks & Technical Debt](docs/08-Riesgos-y-Deuda-Tecnica.md)
