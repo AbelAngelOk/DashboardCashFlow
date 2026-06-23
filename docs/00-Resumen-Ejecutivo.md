@@ -6,6 +6,7 @@
 
 A diferencia de una hoja de cálculo, el sistema es multiusuario, persiste los datos en una base de datos en la nube, permite gestionar activos financieros complejos (acciones con dividendos, plazos fijos, bonos, bots de trading, futuros), y convierte automáticamente montos entre múltiples monedas usando tasas de cambio en tiempo real.
 
+
 ## ¿Para quién fue construido?
 
 Fue construido para uso personal, con posibilidad de múltiples usuarios registrados. El perfil del usuario objetivo es alguien con inversiones diversificadas en múltiples instrumentos y monedas (principalmente en contexto latinoamericano: ARS, USD, USDT). No está orientado a empresas ni a contadores profesionales.
