@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { ArrowLeft, Plus, Trash2, Pencil, Check, X, ChevronDown, ChevronRight } from "lucide-react"
+import { ArrowLeft, Plus, Trash2, Pencil, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -45,15 +45,138 @@ import {
   resumeObligationRule,
   updateObligationStatus,
   updateObligationInfo,
-  deleteObligation,
+  finalizeObligation,
   registerManualPayment,
+  acceptInstallmentPayment,
 } from "@/lib/obligation-actions"
 import { useObligations } from "@/components/obligations-store"
 
+// ── Delete dialog ─────────────────────────────────────────────────────────────
+
+function DeleteObligationDialog({
+  obligation,
+  open,
+  onOpenChange,
+  onConfirm,
+  loading,
+}: {
+  obligation: Obligation
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  onConfirm: (generateExpenses: boolean) => void
+  loading: boolean
+}) {
+  const [generateExpenses, setGenerateExpenses] = useState(false)
+
+  const isInstallment = obligation.obligationType === "INSTALLMENT"
+  const pendingInstallments = obligation.installments.filter(
+    (i) => i.status === "PENDING" || i.status === "OVERDUE",
+  )
+  const pendingAmount = pendingInstallments.reduce((s, i) => s + i.expectedAmount, 0)
+  const hasPendingInstallments = isInstallment && pendingInstallments.length > 0
+
+  const confirmLabel = hasPendingInstallments && generateExpenses
+    ? "Finalizar y registrar gastos"
+    : "Cancelar obligación"
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { if (!loading) onOpenChange(v) }}>
+      <DialogContent className="max-w-sm rounded-none border-2 border-black p-0">
+        <DialogHeader className="border-b-2 border-black bg-black px-4 py-3">
+          <DialogTitle className="font-bold italic text-white">Finalizar obligación</DialogTitle>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4 px-4 py-4">
+          <p className="text-sm">
+            <span className="font-semibold">{obligation.name}</span>
+          </p>
+
+          {hasPendingInstallments && (
+            <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+              <div className="flex justify-between text-xs text-gray-500">
+                <span>Saldo pendiente</span>
+                <span className="font-semibold text-black">
+                  {formatAmount(pendingAmount, obligation.currency)} {obligation.currency}
+                </span>
+              </div>
+              <div className="mt-1 flex justify-between text-xs text-gray-500">
+                <span>Cuotas pendientes</span>
+                <span className="font-semibold text-black">{pendingInstallments.length}</span>
+              </div>
+            </div>
+          )}
+
+          {hasPendingInstallments && (
+            <label className="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-3 text-sm">
+              <input
+                type="checkbox"
+                checked={generateExpenses}
+                onChange={(e) => setGenerateExpenses(e.target.checked)}
+                className="mt-0.5 rounded"
+              />
+              <div>
+                <div className="font-medium">Generar gastos por cuotas pendientes</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Se registrará un gasto por cada cuota pendiente.
+                  La obligación quedará como <strong>Completada</strong>.
+                </div>
+              </div>
+            </label>
+          )}
+
+          <p className="text-xs text-gray-400">
+            El historial de pagos se conservará. Esta acción no se puede deshacer.
+          </p>
+        </div>
+
+        <DialogFooter className="border-t-2 border-black px-4 py-3">
+          <Button
+            variant="outline"
+            className="border-2 border-black"
+            onClick={() => onOpenChange(false)}
+            disabled={loading}
+          >
+            Cancelar
+          </Button>
+          <Button
+            className="bg-black text-white hover:bg-gray-800"
+            onClick={() => onConfirm(hasPendingInstallments && generateExpenses)}
+            disabled={loading}
+          >
+            {loading ? "Procesando..." : confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Payments board ────────────────────────────────────────────────────────────
 
-function PaymentsBoard({ obligation }: { obligation: Obligation }) {
-  const payments = obligation.payments
+function PaymentsBoard({
+  obligation,
+  onReload,
+}: {
+  obligation: Obligation
+  onReload?: () => void
+}) {
+  const [payingId, setPayingId] = useState<string | null>(null)
+  const canPay = obligation.status === "ACTIVE" || obligation.status === "PAUSED"
+
+  const handlePayInstallment = async (installmentId: string, installmentNumber: number) => {
+    setPayingId(installmentId)
+    try {
+      await acceptInstallmentPayment(
+        installmentId,
+        `Cuota ${installmentNumber} — ${obligation.name}`,
+      )
+      onReload?.()
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setPayingId(null)
+    }
+  }
 
   if (obligation.obligationType === "INSTALLMENT") {
     const insts = obligation.installments
@@ -65,14 +188,17 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
             Cuotas ({paidCount}/{insts.length} pagadas)
           </span>
         </div>
-        <div className="flex bg-gray-100 text-xs font-bold border-b border-black">
+        <div className="flex border-b border-black bg-gray-100 text-xs font-bold">
           <div className="w-12 px-2 py-1 text-center">#</div>
           <div className="flex-1 px-2 py-1">Vencimiento</div>
           <div className="w-40 px-2 py-1 text-right">Monto</div>
           <div className="w-24 px-2 py-1 text-center">Estado</div>
+          <div className="hidden w-24 px-2 py-1 text-center lg:block">Gasto ID</div>
+          {canPay && <div className="w-20 px-2 py-1 text-center">Acción</div>}
         </div>
         {insts.map((inst) => {
           const overdue = inst.status === "PENDING" && isOverdue(inst.dueDate)
+          const isPendingOrOverdue = inst.status === "PENDING" || inst.status === "OVERDUE"
           const statusColors: Record<string, string> = {
             PENDING: overdue ? "text-rose-700" : "text-amber-700",
             OVERDUE: "text-rose-700",
@@ -84,7 +210,7 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
               <div className="w-12 px-2 py-1.5 text-center text-gray-500">
                 {inst.installmentNumber}
               </div>
-              <div className={`flex-1 px-2 py-1.5 ${overdue ? "text-rose-700 font-medium" : ""}`}>
+              <div className={`flex-1 px-2 py-1.5 ${overdue ? "font-medium text-rose-700" : ""}`}>
                 {formatObligationDate(inst.dueDate)}
                 {overdue && <span className="ml-1 text-xs">(vencida)</span>}
               </div>
@@ -94,6 +220,31 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
               <div className={`w-24 px-2 py-1.5 text-center text-xs font-semibold ${statusColors[inst.status]}`}>
                 {INSTALLMENT_STATUS_LABELS[inst.status]}
               </div>
+              <div className="hidden w-24 items-center justify-center px-2 py-1.5 lg:flex">
+                {inst.gastoRecordId ? (
+                  <span
+                    title={inst.gastoRecordId}
+                    className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500"
+                  >
+                    {inst.gastoRecordId.slice(0, 8)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
+              </div>
+              {canPay && (
+                <div className="flex w-20 items-center justify-center px-2 py-1">
+                  {isPendingOrOverdue && (
+                    <button
+                      onClick={() => handlePayInstallment(inst.id, inst.installmentNumber)}
+                      disabled={payingId === inst.id}
+                      className="rounded border-2 border-black px-2 py-0.5 text-xs font-semibold hover:bg-black hover:text-white disabled:opacity-50"
+                    >
+                      {payingId === inst.id ? "..." : "Pagar"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )
         })}
@@ -103,12 +254,15 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
             {formatAmount(pendingInstallmentsTotal(insts), obligation.currency)} {obligation.currency}
           </div>
           <div className="w-24" />
+          <div className="hidden w-24 lg:block" />
+          {canPay && <div className="w-20" />}
         </div>
       </div>
     )
   }
 
   // RECURRING or FIXED: show payment history
+  const payments = obligation.payments
   return (
     <div data-testid="obligation-payments-board" className="border-2 border-black">
       <div className="border-b-2 border-black bg-black px-3 py-2">
@@ -118,12 +272,13 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
         <div className="px-4 py-6 text-center text-sm text-gray-400">Sin pagos registrados.</div>
       ) : (
         <>
-          <div className="flex bg-gray-100 text-xs font-bold border-b border-black">
+          <div className="flex border-b border-black bg-gray-100 text-xs font-bold">
             <div className="flex-1 px-2 py-1">Fecha esperada</div>
             <div className="w-36 px-2 py-1 text-right">Monto esperado</div>
             <div className="w-36 px-2 py-1 text-right">Pago realizado</div>
             <div className="w-20 px-2 py-1 text-center">Tipo</div>
             <div className="w-20 px-2 py-1 text-center">Estado</div>
+            <div className="hidden w-24 px-2 py-1 text-center lg:block">Gasto ID</div>
           </div>
           {payments.map((p) => (
             <div key={p.id} className="flex border-b border-black text-sm">
@@ -147,9 +302,27 @@ function PaymentsBoard({ obligation }: { obligation: Obligation }) {
                 {PAYMENT_TYPE_LABELS[p.paymentType]}
               </div>
               <div className="w-20 px-2 py-1.5 text-center text-xs">
-                <span className={p.status === "PAID" ? "text-emerald-700 font-semibold" : p.status === "REJECTED" ? "text-gray-400" : "text-amber-700"}>
+                <span className={
+                  p.status === "PAID"
+                    ? "font-semibold text-emerald-700"
+                    : p.status === "REJECTED"
+                      ? "text-gray-400"
+                      : "text-amber-700"
+                }>
                   {p.status === "PAID" ? "Pagado" : p.status === "REJECTED" ? "Rechazado" : "Pendiente"}
                 </span>
+              </div>
+              <div className="hidden w-24 items-center justify-center px-2 py-1.5 lg:flex">
+                {p.gastoRecordId ? (
+                  <span
+                    title={p.gastoRecordId}
+                    className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] text-gray-500"
+                  >
+                    {p.gastoRecordId.slice(0, 8)}
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-300">—</span>
+                )}
               </div>
             </div>
           ))}
@@ -240,7 +413,7 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
             <div className="ml-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
               <button
                 onClick={() => handlePause(rule.id, rule.status)}
-                className="text-xs text-gray-400 hover:text-black px-1"
+                className="px-1 text-xs text-gray-400 hover:text-black"
                 title={rule.status === "ACTIVE" ? "Pausar regla" : "Reanudar regla"}
               >
                 {rule.status === "ACTIVE" ? "⏸" : "▶"}
@@ -275,12 +448,12 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
           <div className="flex flex-col gap-3 px-4 py-4">
             <div className="flex flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Nombre *</Label>
-              <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alquiler" className="border-2 border-black rounded-none focus-visible:ring-0" />
+              <Input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="Ej: Alquiler" className="rounded-none border-2 border-black focus-visible:ring-0" />
             </div>
             <div className="flex gap-2">
               <div className="flex flex-1 flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Monto *</Label>
-                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="border-2 border-black rounded-none focus-visible:ring-0" />
+                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Moneda</Label>
@@ -305,7 +478,7 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Fecha inicio</Label>
-              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="border-2 border-black rounded-none focus-visible:ring-0" />
+              <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="rounded-none border-2 border-black focus-visible:ring-0" />
             </div>
           </div>
           <DialogFooter className="border-t-2 border-black px-4 py-3">
@@ -378,7 +551,7 @@ function ManualPaymentDialog({
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs font-bold uppercase">Monto ({obligation.currency}) *</Label>
-            <Input autoFocus type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="border-2 border-black rounded-none focus-visible:ring-0" />
+            <Input autoFocus type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
           </div>
           {paymentType === "PAYMENT" && obligation.amount > 0 && (
             <p className="text-xs text-gray-500">
@@ -411,6 +584,8 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
   const { reload } = useObligations()
   const [obligation, setObligation] = useState(initialObligation)
   const [manualPaymentOpen, setManualPaymentOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [nameDraft, setNameDraft] = useState(obligation.name)
   const [editingDesc, setEditingDesc] = useState(false)
@@ -429,11 +604,16 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
     })
   }
 
-  const handleDelete = async () => {
-    if (!confirm(`¿Eliminar la obligación "${obligation.name}"? Esta acción no se puede deshacer.`)) return
-    await deleteObligation(obligation.id)
-    reload()
-    router.push("/obligaciones")
+  const handleFinalize = async (generateExpenses: boolean) => {
+    setDeleting(true)
+    try {
+      await finalizeObligation(obligation.id, generateExpenses)
+      reload()
+      router.push("/obligaciones")
+    } catch (err) {
+      console.error(err)
+      setDeleting(false)
+    }
   }
 
   const saveName = async () => {
@@ -449,17 +629,8 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
     refresh()
   }
 
-  const statusActions: { label: string; status: Obligation["status"] }[] = (
-    [
-      obligation.status === "ACTIVE"
-        ? { label: "Pausar", status: "PAUSED" as const }
-        : { label: "Reanudar", status: "ACTIVE" as const },
-      { label: "Completar", status: "COMPLETED" as const },
-      { label: "Cancelar", status: "CANCELLED" as const },
-    ] as { label: string; status: Obligation["status"] }[]
-  ).filter((a) => a.status !== obligation.status)
-
   const canEdit = obligation.status === "ACTIVE" || obligation.status === "PAUSED"
+  const isPaused = obligation.status === "PAUSED"
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -484,12 +655,24 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
             <div className="mb-1 text-xs font-bold uppercase text-gray-500">Nombre</div>
             {editingName ? (
               <div className="flex gap-1">
-                <Input autoFocus value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") saveName(); if (e.key === "Escape") { setNameDraft(obligation.name); setEditingName(false) } }} className="h-7 border-2 border-black rounded-none focus-visible:ring-0 text-sm" />
+                <Input
+                  autoFocus
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") saveName()
+                    if (e.key === "Escape") { setNameDraft(obligation.name); setEditingName(false) }
+                  }}
+                  className="h-7 rounded-none border-2 border-black text-sm focus-visible:ring-0"
+                />
                 <button onClick={saveName} className="text-emerald-700"><Check className="h-4 w-4" /></button>
                 <button onClick={() => { setNameDraft(obligation.name); setEditingName(false) }} className="text-gray-500"><X className="h-4 w-4" /></button>
               </div>
             ) : (
-              <button onClick={() => canEdit && setEditingName(true)} className="group flex items-center gap-1 font-medium text-left">
+              <button
+                onClick={() => canEdit && setEditingName(true)}
+                className="group flex items-center gap-1 text-left font-medium"
+              >
                 {obligation.name}
                 {canEdit && <Pencil className="h-3 w-3 text-gray-300 opacity-0 group-hover:opacity-100" />}
               </button>
@@ -505,11 +688,26 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
           {/* Status */}
           <div>
             <div className="mb-1 text-xs font-bold uppercase text-gray-500">Estado</div>
-            <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
-              { ACTIVE: "bg-emerald-100 text-emerald-800", PAUSED: "bg-amber-100 text-amber-800", COMPLETED: "bg-gray-100 text-gray-600", CANCELLED: "bg-rose-100 text-rose-800" }[obligation.status]
-            }`}>
-              {OBLIGATION_STATUS_LABELS[obligation.status]}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className={`rounded px-2 py-0.5 text-xs font-semibold ${
+                {
+                  ACTIVE: "bg-emerald-100 text-emerald-800",
+                  PAUSED: "bg-amber-100 text-amber-800",
+                  COMPLETED: "bg-gray-100 text-gray-600",
+                  CANCELLED: "bg-rose-100 text-rose-800",
+                }[obligation.status]
+              }`}>
+                {OBLIGATION_STATUS_LABELS[obligation.status]}
+              </span>
+              {canEdit && (
+                <button
+                  onClick={() => handleStatusChange(isPaused ? "ACTIVE" : "PAUSED")}
+                  className="text-xs text-gray-400 underline hover:text-black"
+                >
+                  {isPaused ? "Reanudar" : "Pausar"}
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Value */}
@@ -517,12 +715,12 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
             <div className="mb-1 text-xs font-bold uppercase text-gray-500">
               {obligation.obligationType === "RECURRING" ? "Proyección anual" : "Saldo pendiente"}
             </div>
-            <span className="font-bold text-base">
+            <span className="text-base font-bold">
               {obligation.obligationType === "RECURRING" ? (
                 (() => {
                   const bd = computeRecurringBreakdown(obligation.rules)
                   const entries = Object.entries(bd).filter(([, v]) => v > 0) as [Currency, number][]
-                  if (entries.length === 0) return <span className="text-gray-400 font-normal">Sin reglas activas</span>
+                  if (entries.length === 0) return <span className="font-normal text-gray-400">Sin reglas activas</span>
                   return entries.map(([cur, val]) => (
                     <span key={cur} className="mr-3">{formatAmount(val, cur)} {cur}</span>
                   ))
@@ -547,19 +745,28 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
             <span>{obligation.currency}</span>
           </div>
 
-          {/* Description — full width */}
+          {/* Description */}
           <div className="md:col-span-2">
             <div className="mb-1 text-xs font-bold uppercase text-gray-500">Descripción</div>
             {editingDesc ? (
               <div className="flex flex-col gap-1">
-                <Textarea value={descDraft} onChange={(e) => setDescDraft(e.target.value)} rows={3} autoFocus className="resize-none rounded-none border-2 border-black focus-visible:ring-0 text-sm" />
+                <Textarea
+                  value={descDraft}
+                  onChange={(e) => setDescDraft(e.target.value)}
+                  rows={3}
+                  autoFocus
+                  className="resize-none rounded-none border-2 border-black text-sm focus-visible:ring-0"
+                />
                 <div className="flex gap-1">
                   <button onClick={saveDesc} className="text-emerald-700"><Check className="h-4 w-4" /></button>
                   <button onClick={() => { setDescDraft(obligation.description ?? ""); setEditingDesc(false) }} className="text-gray-500"><X className="h-4 w-4" /></button>
                 </div>
               </div>
             ) : (
-              <button onClick={() => canEdit && setEditingDesc(true)} className="group flex w-full items-start gap-1 text-left text-gray-700">
+              <button
+                onClick={() => canEdit && setEditingDesc(true)}
+                className="group flex w-full items-start gap-1 text-left text-gray-700"
+              >
                 {obligation.description || <span className="italic text-gray-400">Sin descripción — click para editar</span>}
                 {canEdit && <Pencil className="mt-0.5 h-3 w-3 shrink-0 text-gray-300 opacity-0 group-hover:opacity-100" />}
               </button>
@@ -568,7 +775,7 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
         </div>
       </div>
 
-      {/* Status actions */}
+      {/* Actions */}
       {canEdit && (
         <div className="mb-4 flex flex-wrap gap-2">
           {obligation.obligationType === "FIXED" && (
@@ -577,13 +784,15 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
               Registrar pago
             </Button>
           )}
-          {statusActions.map((a) => (
-            <Button key={a.status} size="sm" variant="outline" className="border-2 border-black" onClick={() => handleStatusChange(a.status)}>
-              {a.label}
-            </Button>
-          ))}
-          <Button size="sm" variant="outline" className="border-2 border-black border-rose-700 text-rose-700 hover:bg-rose-50 ml-auto" onClick={handleDelete}>
-            <Trash2 className="h-3.5 w-3.5 mr-1" />
+
+          {/* Eliminar → abre diálogo */}
+          <Button
+            size="sm"
+            variant="outline"
+            className="ml-auto border-2 border-rose-700 text-rose-700 hover:bg-rose-50"
+            onClick={() => setDeleteDialogOpen(true)}
+          >
+            <Trash2 className="mr-1 h-3.5 w-3.5" />
             Eliminar
           </Button>
         </div>
@@ -597,7 +806,7 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
       )}
 
       {/* Payments/Installments board */}
-      <PaymentsBoard obligation={obligation} />
+      <PaymentsBoard obligation={obligation} onReload={refresh} />
 
       {/* Manual payment dialog (FIXED) */}
       <ManualPaymentDialog
@@ -605,6 +814,15 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
         open={manualPaymentOpen}
         onOpenChange={setManualPaymentOpen}
         onDone={refresh}
+      />
+
+      {/* Delete confirmation dialog */}
+      <DeleteObligationDialog
+        obligation={obligation}
+        open={deleteDialogOpen}
+        onOpenChange={setDeleteDialogOpen}
+        onConfirm={handleFinalize}
+        loading={deleting}
       />
     </div>
   )

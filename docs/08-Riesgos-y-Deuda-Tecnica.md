@@ -192,6 +192,50 @@ El mismo término "movimiento" se usa para dos cosas distintas, lo que puede gen
 
 ---
 
+---
+
+## Riesgos del Libro Contable (nueva arquitectura)
+
+### RD-LC-01: Asiento no creado en nueva operación financiera
+
+**Severidad**: Alta
+
+**Descripción**: Si un desarrollador agrega una nueva función financiera sin llamar `createJournalEntry()`, el Libro Contable queda incompleto silenciosamente. No hay mecanismo de verificación automática.
+
+**Mitigación**: Documentado en `CLAUDE.md` como regla obligatoria. Todo nuevo código financiero debe incluir `createJournalEntry()`.
+
+---
+
+### RD-LC-02: Cuenta `efectivo` virtual — no refleja saldo bancario real
+
+**Severidad**: Media
+
+**Descripción**: La cuenta `efectivo` en los asientos es conceptual. El saldo calculado de esa cuenta no corresponde al dinero real que el usuario tiene en el banco. Un usuario podría confundir el saldo `efectivo` del Libro Contable con su balance bancario real.
+
+**Mitigación**: Documentar claramente en la UI que `efectivo` es una cuenta contable, no un saldo bancario.
+
+---
+
+### RD-LC-03: Multi-moneda: asientos no convierten entre monedas
+
+**Severidad**: Baja
+
+**Descripción**: Los balances de cuenta se calculan por moneda (ej: activos.USD, activos.ARS). No hay conversión automática entre monedas en el libro contable. Esto es consistente con el sistema actual, pero significa que no hay un "balance total" en una sola moneda a menos que el usuario configure tasas de cambio.
+
+**Mitigación**: Mostrar balances por moneda en la UI. La conversión es responsabilidad del módulo `SettingsProvider` (tasas de cambio en localStorage).
+
+---
+
+### RD-LC-04: Datos históricos sin asientos (antes del deploy del Libro Contable)
+
+**Severidad**: Baja
+
+**Descripción**: Transacciones anteriores al deploy no tendrán asientos en `journal_entries`. El Libro Contable empieza desde un saldo inicial aproximado.
+
+**Mitigación**: Función `initializeAccountBalances()` crea un asiento de apertura basado en el estado actual de Records. Documentado como decisión deliberada en `docs/financial-domain-architecture.md`.
+
+---
+
 ## Resumen de prioridades
 
 | # | Riesgo/Deuda | Severidad | Acción recomendada |

@@ -92,6 +92,18 @@ Per-field editing (name, ticker, assetType, description). Click field → edit m
 
 `components/dashboard-sheet.tsx` — renders the full financial dashboard (Estado de Resultados + Balance) as editable tables. Accepts a `readOnly` boolean prop: when `true`, hides add/edit/delete controls. Used on the live dashboard (`/`) and in read-only snapshot views (`/snapshots/[id]`). Group activos in the assets table are collapsible — click chevron to expand children. Groups are not editable/deletable from the dashboard.
 
+### Financial recording layers
+
+Three parallel layers — do not confuse them:
+
+| Layer | DB table | Purpose | Server actions file |
+|-------|----------|---------|---------------------|
+| **JournalEntry** (Libro Contable) | `journal_entries` | Double-entry ledger: every financial event → debit/credit pair | `lib/journal-actions.ts` |
+| **AuditLog** (Historial) | `movements` | CRUD audit trail: creado/editado/eliminado | `lib/actions.ts` |
+| **FinancialMovement** | `financial_movements` | Per-asset transaction log: BUY/SELL/DEPOSIT/EXTRACT | `lib/assets-actions.ts` |
+
+**RULE: Every new financial function MUST call `createJournalEntry()` from `lib/journal-actions.ts`.** See `docs/financial-domain-architecture.md` for the full operations → accounts mapping.
+
 ### Pages
 
 | Route | File | Purpose |
@@ -99,9 +111,14 @@ Per-field editing (name, ticker, assetType, description). Click field → edit m
 | `/` | `app/(dashboard)/page.tsx` | Live editable dashboard + snapshot dialog |
 | `/activos` | `app/(dashboard)/activos/page.tsx` | Asset list; "Agrupar" mode for creating groups |
 | `/activos/[id]` | `app/(dashboard)/activos/[id]/page.tsx` | Asset detail: inline edit fields + panels + boards |
+| `/gastos` | `app/(dashboard)/gastos/page.tsx` | Expense list grouped by source |
+| `/ingresos` | `app/(dashboard)/ingresos/page.tsx` | Income list grouped by source |
+| `/libro-contable` | `app/(dashboard)/libro-contable/page.tsx` | Double-entry ledger view with account balances |
+| `/historial` | `app/(dashboard)/historial/page.tsx` | Audit log of CRUD events (renamed from /movimientos) |
 | `/snapshots` | `app/(dashboard)/snapshots/page.tsx` | List of saved snapshots |
-| `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Read-only snapshot view |
-| `/movimientos` | `app/(dashboard)/movimientos/page.tsx` | Audit log of all record changes |
+| `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Read-only snapshot view with account balances |
+| `/obligaciones` | `app/(dashboard)/obligaciones/page.tsx` | Obligations list |
+| `/obligaciones/[id]` | `app/(dashboard)/obligaciones/[id]/page.tsx` | Obligation detail |
 | `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Currency settings + configurable asset types |
 
 ### Component IDs (`data-testid`)

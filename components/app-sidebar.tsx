@@ -3,7 +3,7 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
-import { LayoutDashboard, Camera, History, LogOut, Settings2, TrendingUp, FileText } from "lucide-react"
+import { LayoutDashboard, Camera, History, LogOut, Settings2, TrendingUp, FileText, ShoppingCart, TrendingDown, BookOpen } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useFinance } from "@/components/finance-store"
@@ -36,14 +36,32 @@ export function AppSidebar() {
       badge: undefined as number | undefined,
     },
     {
+      href: "/gastos",
+      label: "Gastos",
+      icon: ShoppingCart,
+      badge: undefined as number | undefined,
+    },
+    {
+      href: "/ingresos",
+      label: "Ingresos",
+      icon: TrendingDown,
+      badge: undefined as number | undefined,
+    },
+    {
       href: "/snapshots",
       label: "Snapshots",
       icon: Camera,
       badge: snapshots.length,
     },
     {
-      href: "/movimientos",
-      label: "Movimientos",
+      href: "/libro-contable",
+      label: "Libro Contable",
+      icon: BookOpen,
+      badge: undefined,
+    },
+    {
+      href: "/historial",
+      label: "Historial",
       icon: History,
       badge: movements.length,
     },

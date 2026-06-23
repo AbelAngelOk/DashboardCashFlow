@@ -21,6 +21,7 @@ import {
 import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { currencies, defaultCurrency, type Currency } from "@/lib/finance"
 import { createAsset } from "@/lib/assets-actions"
+import { createLinkedGasto } from "@/lib/gasto-actions"
 import { useFinance } from "@/components/finance-store"
 import { useSettings } from "@/components/settings-store"
 
@@ -61,6 +62,7 @@ export function AssetFormDialog({
   const [ftStartDate, setFtStartDate] = useState("")
   const [ftEndDate, setFtEndDate] = useState("")
   const [ftRate, setFtRate] = useState("")
+  const [createGasto, setCreateGasto] = useState(false)
   const [saving, setSaving] = useState(false)
 
   const hasQtyPrice = ["STOCK", "CRYPTO", "FUTURES", "OPTIONS"].includes(assetType)
@@ -98,6 +100,7 @@ export function AssetFormDialog({
     setFtStartDate("")
     setFtEndDate("")
     setFtRate("")
+    setCreateGasto(false)
     setAssetType(defaultAssetType)
   }
 
@@ -141,6 +144,15 @@ export function AssetFormDialog({
         parentId,
         metadata: buildInitialMetadata(),
       })
+
+      if (createGasto && Number(amount) > 0) {
+        await createLinkedGasto({
+          name: `Inversión en ${name.trim()}`,
+          amount: Number(amount),
+          currency,
+          linkedTo: id,
+        }).catch(console.error)
+      }
 
       reload()
       onCreate?.()
@@ -311,6 +323,24 @@ export function AssetFormDialog({
               className="border-2 border-black"
             />
           </div>
+
+          {/* Generar gasto asociado */}
+          {!parentId && (
+            <label className="flex cursor-pointer items-start gap-2 rounded border border-gray-200 p-3 text-sm hover:border-gray-400">
+              <input
+                type="checkbox"
+                checked={createGasto}
+                onChange={(e) => setCreateGasto(e.target.checked)}
+                className="mt-0.5"
+              />
+              <div>
+                <div className="font-medium">Generar gasto asociado</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Registra un gasto por el monto invertido: "Inversión en {name.trim() || "activo"}"
+                </div>
+              </div>
+            </label>
+          )}
         </div>
 
         <DialogFooter className="border-t-2 border-black px-4 py-3">

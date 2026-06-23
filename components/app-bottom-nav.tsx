@@ -14,6 +14,9 @@ import {
   Settings2,
   LogOut,
   X,
+  ShoppingCart,
+  TrendingDown,
+  BookOpen,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -21,10 +24,13 @@ const mainItems = [
   { href: "/", label: "Inicio", icon: LayoutDashboard },
   { href: "/activos", label: "Activos", icon: TrendingUp },
   { href: "/obligaciones", label: "Obligac.", icon: FileText },
-  { href: "/movimientos", label: "Movim.", icon: History },
+  { href: "/historial", label: "Historial", icon: History },
 ]
 
 const moreItems = [
+  { href: "/gastos", label: "Gastos", icon: ShoppingCart },
+  { href: "/ingresos", label: "Ingresos", icon: TrendingDown },
+  { href: "/libro-contable", label: "Libro Contable", icon: BookOpen },
   { href: "/snapshots", label: "Snapshots", icon: Camera },
   { href: "/configuracion", label: "Personalización", icon: Settings2 },
 ]

@@ -23,6 +23,7 @@ model Record {
   description   String?
   operationDate DateTime? @map("operation_date")
   deletedAt     DateTime? @map("deleted_at")
+  status        String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "CANCELLED"
   assetType     String?   @map("asset_type")
   ticker        String?
   currentQty    Decimal?  @map("current_quantity") @db.Decimal(18, 8)
@@ -115,8 +116,33 @@ model User {
   auditLogs          AuditLog[]
   obligations        Obligation[]
   obligationPayments ObligationPayment[]
+  journalEntries     JournalEntry[]
 
   @@map("users")
+}
+
+// ── Libro Contable (Doble Entrada) ────────────────────────────────────────────
+
+// AccountType values: "activos" | "pasivos" | "ingresos" | "gastos" | "efectivo" | "obligaciones"
+model JournalEntry {
+  id             String   @id @default(uuid())
+  date           DateTime @default(now())
+  description    String
+  currency       String
+  amount         Decimal  @db.Decimal(18, 4)
+  debitAccount   String   @map("debit_account")
+  creditAccount  String   @map("credit_account")
+  sourceEntityId String?  @map("source_entity_id")
+  targetEntityId String?  @map("target_entity_id")
+  reference      String?
+  notes          String?
+  userId         String   @map("user_id")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([userId, date])
+  @@map("journal_entries")
 }
 
 // ── Módulo Obligaciones ────────────────────────────────────────────────────────

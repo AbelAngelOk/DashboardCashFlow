@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import type { Currency } from "./finance"
+import { createJournalEntry } from "./journal-actions"
 import {
   type Obligation,
   type ObligationInstallment,
@@ -241,17 +242,44 @@ async function ensurePaymentWindow(
 
   if (toCreate.length === 0) return
 
+  // Fetch obligation name for gasto names
+  const obligation = await prisma.obligation.findUnique({
+    where: { id: obligationId },
+    select: { name: true },
+  })
+  const obligationName = obligation?.name ?? "Obligación"
+
+  const paymentEntries = toCreate.map((d) => ({
+    paymentId: crypto.randomUUID(),
+    gastoId: crypto.randomUUID(),
+    date: d,
+  }))
+
   await prisma.obligationPayment.createMany({
-    data: toCreate.map((d) => ({
-      id: crypto.randomUUID(),
+    data: paymentEntries.map(({ paymentId, gastoId, date }) => ({
+      id: paymentId,
       obligationId,
       userId,
       ruleId,
       paymentType: "PAYMENT",
-      expectedDate: d,
+      expectedDate: date,
       expectedAmount: rule.expectedAmount,
       currency: rule.currency,
       status: "PENDING",
+      gastoRecordId: gastoId,
+    })),
+  })
+
+  await prisma.record.createMany({
+    data: paymentEntries.map(({ gastoId, date }) => ({
+      id: gastoId,
+      type: "gasto",
+      name: `[Programado] ${obligationName}`,
+      amount: rule.expectedAmount,
+      currency: rule.currency,
+      userId,
+      status: "PENDING",
+      operationDate: date,
     })),
   })
 }
@@ -348,7 +376,10 @@ export async function createObligation(data: {
   ) {
     let dueDate = new Date(data.firstDueDate)
     const installments = []
+    const gastoRecords = []
+
     for (let i = 1; i <= data.installmentCount; i++) {
+      const gastoId = crypto.randomUUID()
       installments.push({
         id: crypto.randomUUID(),
         obligationId: id,
@@ -356,10 +387,23 @@ export async function createObligation(data: {
         dueDate: new Date(dueDate),
         expectedAmount: data.installmentAmount,
         status: "PENDING",
+        gastoRecordId: gastoId,
+      })
+      gastoRecords.push({
+        id: gastoId,
+        type: "gasto",
+        name: `Cuota ${i} — ${data.name}`,
+        amount: data.installmentAmount,
+        currency: data.currency,
+        userId,
+        status: "PENDING",
+        operationDate: new Date(dueDate),
       })
       dueDate = addMonths(dueDate, 1)
     }
+
     await prisma.obligationInstallment.createMany({ data: installments })
+    await prisma.record.createMany({ data: gastoRecords })
     await prisma.obligation.update({
       where: { id, userId },
       data: {
@@ -453,21 +497,38 @@ export async function acceptObligationPayment(
   })
   if (!payment) throw new Error("Pago no encontrado")
 
-  const gastoId = crypto.randomUUID()
-  await prisma.record.create({
-    data: {
-      id: gastoId,
-      type: "gasto",
-      name: gastoName,
-      amount: payment.expectedAmount ?? 0,
-      currency: payment.currency,
-      userId,
-    },
-  })
+  let gastoId: string
+
+  if (payment.gastoRecordId) {
+    // Activar el gasto PENDING ya existente
+    await prisma.record.update({
+      where: { id: payment.gastoRecordId, userId },
+      data: { name: gastoName, status: "ACTIVE" },
+    })
+    gastoId = payment.gastoRecordId
+  } else {
+    // Backwards compat: crear gasto nuevo (para pagos sin gasto upfront)
+    gastoId = crypto.randomUUID()
+    await prisma.record.create({
+      data: {
+        id: gastoId,
+        type: "gasto",
+        name: gastoName,
+        amount: payment.expectedAmount ?? 0,
+        currency: payment.currency,
+        userId,
+        status: "ACTIVE",
+      },
+    })
+    await prisma.obligationPayment.update({
+      where: { id: paymentId },
+      data: { gastoRecordId: gastoId },
+    })
+  }
 
   await prisma.obligationPayment.update({
     where: { id: paymentId },
-    data: { status: "PAID", gastoRecordId: gastoId },
+    data: { status: "PAID" },
   })
 
   // Extend window if needed (ensure next 12 months are covered)
@@ -481,6 +542,19 @@ export async function acceptObligationPayment(
         currency: rule.currency,
       })
     }
+  }
+
+  const gastoAmount = payment.expectedAmount?.toNumber() ?? 0
+  if (gastoAmount > 0) {
+    await createJournalEntry(userId, {
+      description: `Pago obligación: ${gastoName}`,
+      currency: payment.currency,
+      amount: gastoAmount,
+      debitAccount: "gastos",
+      creditAccount: "efectivo",
+      sourceEntityId: gastoId,
+      reference: paymentId,
+    })
   }
 
   await recalcularObligation(payment.obligationId, userId)
@@ -499,6 +573,14 @@ export async function rejectObligationPayment(paymentId: string): Promise<void> 
     data: { status: "REJECTED" },
   })
 
+  // Cancelar el gasto PENDING vinculado (si existe)
+  if (payment.gastoRecordId) {
+    await prisma.record.update({
+      where: { id: payment.gastoRecordId, userId },
+      data: { status: "CANCELLED" },
+    })
+  }
+
   await recalcularObligation(payment.obligationId, userId)
 }
 
@@ -515,21 +597,38 @@ export async function acceptInstallmentPayment(
   })
   if (!inst) throw new Error("Cuota no encontrada")
 
-  const gastoId = crypto.randomUUID()
-  await prisma.record.create({
-    data: {
-      id: gastoId,
-      type: "gasto",
-      name: gastoName,
-      amount: inst.expectedAmount,
-      currency: inst.obligation.currency,
-      userId,
-    },
-  })
+  let gastoId: string
+
+  if (inst.gastoRecordId) {
+    // Activar el gasto PENDING ya existente
+    await prisma.record.update({
+      where: { id: inst.gastoRecordId, userId },
+      data: { name: gastoName, status: "ACTIVE" },
+    })
+    gastoId = inst.gastoRecordId
+  } else {
+    // Backwards compat: crear gasto nuevo
+    gastoId = crypto.randomUUID()
+    await prisma.record.create({
+      data: {
+        id: gastoId,
+        type: "gasto",
+        name: gastoName,
+        amount: inst.expectedAmount,
+        currency: inst.obligation.currency,
+        userId,
+        status: "ACTIVE",
+      },
+    })
+    await prisma.obligationInstallment.update({
+      where: { id: installmentId },
+      data: { gastoRecordId: gastoId },
+    })
+  }
 
   await prisma.obligationInstallment.update({
     where: { id: installmentId },
-    data: { status: "PAID", gastoRecordId: gastoId },
+    data: { status: "PAID" },
   })
 
   // Create payment record for history
@@ -546,6 +645,21 @@ export async function acceptInstallmentPayment(
       status: "PAID",
     },
   })
+
+  const instAmount = typeof inst.expectedAmount === "number"
+    ? inst.expectedAmount
+    : (inst.expectedAmount as { toNumber: () => number }).toNumber()
+  if (instAmount > 0) {
+    await createJournalEntry(userId, {
+      description: `Cuota pagada: ${gastoName}`,
+      currency: inst.obligation.currency,
+      amount: instAmount,
+      debitAccount: "gastos",
+      creditAccount: "efectivo",
+      sourceEntityId: gastoId,
+      reference: installmentId,
+    })
+  }
 
   await recalcularObligation(inst.obligationId, userId)
   return gastoId
@@ -609,6 +723,15 @@ export async function registerManualPayment(
     },
   })
 
+  await createJournalEntry(userId, {
+    description: `Pago manual: ${data.gastoName}`,
+    currency: obligation.currency,
+    amount: data.amount,
+    debitAccount: "gastos",
+    creditAccount: "efectivo",
+    sourceEntityId: gastoId,
+  })
+
   // Reduce pending amount (only for PAYMENT type, not INTEREST)
   if (data.paymentType === "PAYMENT") {
     const newAmount = Math.max(0, obligation.amount.toNumber() - data.amount)
@@ -655,4 +778,103 @@ export async function deleteObligation(obligationId: string): Promise<void> {
   const userId = await getUserId()
   // Cascade deletes rules, installments, payments via onDelete: Cascade in schema
   await prisma.obligation.delete({ where: { id: obligationId, userId } })
+}
+
+/**
+ * Finaliza una obligación sin eliminar físicamente ningún registro.
+ *
+ * INSTALLMENT + generateExpenses=true  → crea gastos por cuotas pendientes → COMPLETED
+ * INSTALLMENT + generateExpenses=false → marca cuotas pendientes como REJECTED → CANCELLED
+ * RECURRING / FIXED                    → rechaza pagos PENDING → CANCELLED
+ */
+export async function finalizeObligation(
+  obligationId: string,
+  generateExpenses: boolean,
+): Promise<void> {
+  const userId = await getUserId()
+  const obligation = await prisma.obligation.findFirst({
+    where: { id: obligationId, userId },
+    include: {
+      installments: { where: { status: { in: ["PENDING", "OVERDUE"] } } },
+      payments: { where: { status: "PENDING" } },
+    },
+  })
+  if (!obligation) throw new Error("Obligación no encontrada")
+
+  if (obligation.obligationType === "INSTALLMENT") {
+    if (generateExpenses) {
+      for (const inst of obligation.installments) {
+        let gastoId: string
+        if (inst.gastoRecordId) {
+          // Activar gasto PENDING preexistente
+          await prisma.record.update({
+            where: { id: inst.gastoRecordId, userId },
+            data: {
+              name: `Cuota ${inst.installmentNumber} — ${obligation.name}`,
+              status: "ACTIVE",
+            },
+          })
+          gastoId = inst.gastoRecordId
+        } else {
+          // Backwards compat: crear gasto
+          gastoId = crypto.randomUUID()
+          await prisma.record.create({
+            data: {
+              id: gastoId,
+              type: "gasto",
+              name: `Cuota ${inst.installmentNumber} — ${obligation.name}`,
+              amount: inst.expectedAmount,
+              currency: obligation.currency,
+              userId,
+              status: "ACTIVE",
+            },
+          })
+        }
+        await prisma.obligationInstallment.update({
+          where: { id: inst.id },
+          data: { status: "PAID", gastoRecordId: gastoId },
+        })
+        await prisma.obligationPayment.create({
+          data: {
+            id: crypto.randomUUID(),
+            obligationId,
+            userId,
+            paymentType: "PAYMENT",
+            expectedDate: inst.dueDate,
+            expectedAmount: inst.expectedAmount,
+            currency: obligation.currency,
+            gastoRecordId: gastoId,
+            status: "PAID",
+          },
+        })
+      }
+      await prisma.obligation.update({
+        where: { id: obligationId, userId },
+        data: { status: "COMPLETED", amount: 0, nextDueDate: null },
+      })
+    } else {
+      if (obligation.installments.length > 0) {
+        await prisma.obligationInstallment.updateMany({
+          where: { id: { in: obligation.installments.map((i) => i.id) } },
+          data: { status: "REJECTED" },
+        })
+      }
+      await prisma.obligation.update({
+        where: { id: obligationId, userId },
+        data: { status: "CANCELLED", amount: 0, nextDueDate: null },
+      })
+    }
+  } else {
+    // RECURRING / FIXED: reject pending payments, set CANCELLED
+    if (obligation.payments.length > 0) {
+      await prisma.obligationPayment.updateMany({
+        where: { obligationId, status: "PENDING" },
+        data: { status: "REJECTED" },
+      })
+    }
+    await prisma.obligation.update({
+      where: { id: obligationId, userId },
+      data: { status: "CANCELLED", amount: 0, nextDueDate: null },
+    })
+  }
 }

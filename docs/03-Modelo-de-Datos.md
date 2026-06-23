@@ -330,6 +330,44 @@ Tabla pivote entre `records` y `groups`.
 
 ---
 
+---
+
+## Tabla: `journal_entries` (JournalEntry / Asiento Contable)
+
+Modelo Prisma: `JournalEntry`
+
+Libro contable de doble entrada. Cada evento financiero genera al menos un asiento que registra la cuenta debitada y la cuenta acreditada. Ver `docs/financial-domain-architecture.md` para la arquitectura completa.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por el servidor |
+| `date` | DateTime | No | Fecha del asiento (default: now()) |
+| `description` | String | No | Descripción del evento financiero |
+| `currency` | String | No | Moneda del asiento |
+| `amount` | Decimal(18,4) | No | Monto del asiento |
+| `debit_account` | String | No | Cuenta debitada: `"activos"` \| `"pasivos"` \| `"ingresos"` \| `"gastos"` \| `"efectivo"` \| `"obligaciones"` |
+| `credit_account` | String | No | Cuenta acreditada: mismo set |
+| `source_entity_id` | String? | Sí | FK a `records.id` — entidad origen del asiento |
+| `target_entity_id` | String? | Sí | FK a `records.id` — entidad destino del asiento |
+| `reference` | String? | Sí | ID externo de referencia (obligationPaymentId, dividendId, etc.) |
+| `notes` | String? | Sí | Observaciones opcionales del usuario |
+| `user_id` | String | No | FK a `users.id` |
+
+**Índices**:
+- `(user_id)`
+- `(user_id, date)` — para queries temporales por usuario
+
+**Relaciones**:
+- `user` → `users` (N:1)
+
+**Notas**:
+- La tabla coexiste con `AuditLog` y `FinancialMovement` — no las reemplaza.
+- `AuditLog` es para auditoría de CRUD. `FinancialMovement` es para tracking operacional de activos. `JournalEntry` es el libro contable financiero.
+- La cuenta `"efectivo"` es virtual — representa caja/banco del usuario sin un record real asociado.
+- Solo registra operaciones desde la fecha de deploy. Ver estrategia de migración en `docs/financial-domain-architecture.md`.
+
+---
+
 ## Consideraciones del modelo
 
 1. **Tabla polimórfica `records`**: Una sola tabla alberga todos los tipos de registros (simples y complejos). Simplifica el esquema pero mezcla columnas que solo tienen sentido para activos (`ticker`, `current_quantity`, `avg_buy_price`, `metadata`) con registros simples (ingresos, gastos).

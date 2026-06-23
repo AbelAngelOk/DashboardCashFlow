@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -16,16 +17,21 @@ import {
 import { DashboardSheet } from "@/components/dashboard-sheet"
 import { useFinance, currentPeriod } from "@/components/finance-store"
 import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialog"
+import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
+import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
 import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
 import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
 export default function DashboardPage() {
+  const router = useRouter()
   const { records, snapshots, createRecord, editRecord, deleteRecord, takeSnapshot, reload } =
     useFinance()
 
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
   const [breakdownRecord, setBreakdownRecord] = useState<FinancialRecord | null>(null)
+  const [obligationFormOpen, setObligationFormOpen] = useState(false)
+  const [assetFormOpen, setAssetFormOpen] = useState(false)
 
   const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
     editRecord(record, previous)
@@ -151,6 +157,23 @@ export default function DashboardPage() {
         onBreakdown={setBreakdownRecord}
         onDeleteWithComment={(r, c, i) => handleActivoDelete(r, c, i)}
         onEditAmountWithComment={(r, p, c, t, g, i) => handleActivoEditAmount(r, p, c, t, g, i)}
+        onAddObligation={() => setObligationFormOpen(true)}
+        onAddAsset={() => setAssetFormOpen(true)}
+      />
+
+      <ObligationFormDialog
+        open={obligationFormOpen}
+        onOpenChange={setObligationFormOpen}
+        onCreated={(id) => {
+          reload()
+          router.push(`/obligaciones/${id}`)
+        }}
+      />
+
+      <AssetFormDialog
+        open={assetFormOpen}
+        onOpenChange={setAssetFormOpen}
+        onCreate={() => router.refresh()}
       />
 
       {breakdownRecord && (

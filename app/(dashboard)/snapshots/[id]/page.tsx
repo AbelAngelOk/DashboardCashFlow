@@ -5,6 +5,59 @@ import Link from "next/link"
 import { ArrowLeft, Camera } from "lucide-react"
 import { useFinance } from "@/components/finance-store"
 import { DashboardSheet } from "@/components/dashboard-sheet"
+import { formatAmount, type Currency } from "@/lib/finance"
+import type { AccountType, AccountBalances } from "@/lib/journal-actions"
+
+const ACCOUNT_LABELS: Record<AccountType, string> = {
+  activos: "Activos",
+  pasivos: "Pasivos",
+  ingresos: "Ingresos",
+  gastos: "Gastos",
+  efectivo: "Efectivo",
+  obligaciones: "Obligaciones",
+}
+
+function SnapshotBalancesPanel({ data }: { data?: Record<string, unknown> }) {
+  const balances = data?.accountBalances as AccountBalances | undefined
+  if (!balances) return null
+
+  const accounts = Object.keys(balances) as AccountType[]
+  const hasSomeBalance = accounts.some((a) =>
+    Object.values(balances[a]).some((v) => v !== 0),
+  )
+  if (!hasSomeBalance) return null
+
+  return (
+    <div className="mb-6">
+      <h2 className="mb-2 text-sm font-bold uppercase tracking-wide text-gray-500">
+        Balances Contables al Snapshot
+      </h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {accounts.map((account) => {
+          const currencies = balances[account]
+          const entries = Object.entries(currencies).filter(([, v]) => v !== 0)
+          if (entries.length === 0) return null
+          return (
+            <div key={account} className="border-2 border-black p-3">
+              <div className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-500">
+                {ACCOUNT_LABELS[account]}
+              </div>
+              {entries.map(([cur, val]) => (
+                <div
+                  key={cur}
+                  className={`text-sm font-semibold ${val >= 0 ? "text-emerald-700" : "text-rose-700"}`}
+                >
+                  {val >= 0 ? "+" : ""}
+                  {formatAmount(Math.abs(val), cur as Currency)} {cur}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
 
 export default function SnapshotDetailPage({
   params,
@@ -62,6 +115,7 @@ export default function SnapshotDetailPage({
         </div>
       </div>
 
+      <SnapshotBalancesPanel data={snapshot.data} />
       <DashboardSheet records={snapshot.records} readOnly />
     </div>
   )

@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth"
 import { hash } from "bcryptjs"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
+import { getAccountBalances } from "./journal-actions"
 import type {
   Currency,
   FinancialRecord,
@@ -60,7 +61,15 @@ export async function loadData(): Promise<{
 
   const [dbRecords, dbSnapshots, dbMovements] = await Promise.all([
     prisma.record.findMany({
-      where: { userId, deletedAt: null },
+      where: {
+        userId,
+        deletedAt: null,
+        // Gastos PENDING son internos del módulo Obligaciones; no aparecen en dashboard
+        OR: [
+          { type: { not: "gasto" } },
+          { type: "gasto", status: "ACTIVE" },
+        ],
+      },
       include: { _count: { select: { children: true } } },
     }),
     prisma.snapshot.findMany({
@@ -91,6 +100,7 @@ export async function loadData(): Promise<{
       name: s.name,
       period: s.period,
       createdAt: s.createdAt,
+      data: (s.data as Record<string, unknown>) ?? undefined,
       records: s.snapshotRecords.map((sr) => ({
         id: sr.id,
         type: sr.type as RecordType,
@@ -131,6 +141,7 @@ export async function dbCreateRecord(
         parentId: record.parentId ?? null,
         assetType: record.assetType ?? null,
         userId,
+        status: "ACTIVE",
       },
     }),
     prisma.auditLog.create({
@@ -212,6 +223,7 @@ export async function dbDeleteRecord(
 
 export async function dbTakeSnapshot(snapshot: Snapshot) {
   const userId = await getUserId()
+  const accountBalances = await getAccountBalances(new Date())
   await prisma.$transaction(async (tx) => {
     await tx.snapshot.create({
       data: {
@@ -220,6 +232,7 @@ export async function dbTakeSnapshot(snapshot: Snapshot) {
         period: snapshot.period,
         createdAt: snapshot.createdAt,
         userId,
+        data: { accountBalances } as object,
       },
     })
     if (snapshot.records.length > 0) {

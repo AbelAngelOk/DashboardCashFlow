@@ -6,6 +6,7 @@ import { prisma } from "./db"
 import type { Asset, AssetFinancialMovement, AssetType, MovementType, TrackingConfig, BoardConfig } from "./assets"
 import { extractBoards } from "./assets"
 import type { Currency } from "./finance"
+import { createJournalEntry } from "./journal-actions"
 
 async function getUserId(): Promise<string> {
   const session = await getServerSession(authOptions)
@@ -93,6 +94,16 @@ export async function createAsset(data: {
       operationDate: new Date(),
     },
   })
+  if (data.amount > 0) {
+    await createJournalEntry(userId, {
+      description: `Inversión inicial: ${data.name}`,
+      currency: data.currency,
+      amount: data.amount,
+      debitAccount: "activos",
+      creditAccount: "efectivo",
+      sourceEntityId: id,
+    })
+  }
   return id
 }
 
@@ -185,6 +196,7 @@ export async function addMovement(data: {
   description?: string
   operationDate?: Date
   metadata?: unknown
+  skipJournalEntry?: boolean
 }): Promise<string> {
   const userId = await getUserId()
   const id = crypto.randomUUID()
@@ -204,6 +216,39 @@ export async function addMovement(data: {
       ...(data.metadata != null ? { metadata: data.metadata as object } : {}),
     },
   })
+  if (!data.skipJournalEntry && data.amount !== 0) {
+    const absAmount = Math.abs(data.amount)
+    const mt = data.movementType
+    const desc = data.description ?? `${mt}: ${absAmount} ${data.currency}`
+    if (mt === "DEPOSIT" || mt === "BUY" || (mt === "ADJUSTMENT" && data.amount > 0)) {
+      await createJournalEntry(userId, {
+        description: desc,
+        currency: data.currency,
+        amount: absAmount,
+        debitAccount: "activos",
+        creditAccount: "efectivo",
+        sourceEntityId: data.recordId,
+      })
+    } else if (mt === "EXTRACT" || mt === "SELL" || (mt === "ADJUSTMENT" && data.amount < 0)) {
+      await createJournalEntry(userId, {
+        description: desc,
+        currency: data.currency,
+        amount: absAmount,
+        debitAccount: "efectivo",
+        creditAccount: "activos",
+        targetEntityId: data.recordId,
+      })
+    } else if (mt === "FEE") {
+      await createJournalEntry(userId, {
+        description: desc,
+        currency: data.currency,
+        amount: absAmount,
+        debitAccount: "gastos",
+        creditAccount: "efectivo",
+        sourceEntityId: data.recordId,
+      })
+    }
+  }
   return id
 }
 
@@ -279,6 +324,7 @@ export async function collectDividend(
         amount: actualGain,
         currency,
         userId,
+        linkedTo: assetId,
       },
     }),
     prisma.record.update({
@@ -286,6 +332,15 @@ export async function collectDividend(
       data: { metadata: { ...rawMeta, boards: updatedBoards as unknown as object } },
     }),
   ])
+  await createJournalEntry(userId, {
+    description: `Ganancia dividendos ${assetName}`,
+    currency,
+    amount: actualGain,
+    debitAccount: "efectivo",
+    creditAccount: "ingresos",
+    targetEntityId: ingresoId,
+    reference: dividendId,
+  })
   return ingresoId
 }
 
@@ -307,6 +362,7 @@ export async function collectFixedTerm(
         amount: collectedAmount,
         currency,
         userId,
+        linkedTo: assetId,
       },
     }),
     prisma.record.update({
@@ -314,6 +370,15 @@ export async function collectFixedTerm(
       data: { deletedAt: new Date() },
     }),
   ])
+  await createJournalEntry(userId, {
+    description: `Cobro plazo fijo: ${assetName}`,
+    currency,
+    amount: collectedAmount,
+    debitAccount: "efectivo",
+    creditAccount: "ingresos",
+    targetEntityId: ingresoId,
+    sourceEntityId: assetId,
+  })
   return ingresoId
 }
 
@@ -359,9 +424,19 @@ export async function zeroOutAsset(
           amount: previousAmount,
           currency,
           userId,
+          linkedTo: recordId,
         },
       })
     }
+  })
+  await createJournalEntry(userId, {
+    description: `Liquidación ${assetName}`,
+    currency,
+    amount: previousAmount,
+    debitAccount: "efectivo",
+    creditAccount: "activos",
+    targetEntityId: recordId,
+    reference: ingresoId ?? undefined,
   })
   return ingresoId
 }
@@ -572,6 +647,7 @@ export async function liquidarActivo(
           amount: previousAmount,
           currency,
           userId,
+          linkedTo: recordId,
         },
       })
     }
@@ -581,6 +657,15 @@ export async function liquidarActivo(
     await recalcularGrupo(record.parentId, userId)
   }
 
+  await createJournalEntry(userId, {
+    description: `Liquidación de ${assetName}`,
+    currency,
+    amount: previousAmount,
+    debitAccount: "efectivo",
+    creditAccount: "activos",
+    targetEntityId: recordId,
+    reference: ingresoId ?? undefined,
+  })
   return ingresoId
 }
 
@@ -668,6 +753,7 @@ export async function createExtractFromDashboard(
           amount: egressAmount,
           currency,
           userId,
+          linkedTo: recordId,
         },
       })
     }
@@ -677,6 +763,15 @@ export async function createExtractFromDashboard(
     await recalcularGrupo(record.parentId, userId)
   }
 
+  await createJournalEntry(userId, {
+    description: `Venta de ${assetName}`,
+    currency,
+    amount: egressAmount,
+    debitAccount: "efectivo",
+    creditAccount: "activos",
+    targetEntityId: recordId,
+    reference: ingresoId ?? undefined,
+  })
   return ingresoId
 }
 

@@ -133,6 +133,8 @@ interface DashboardSheetProps {
     createGasto: boolean,
     createIngreso: boolean,
   ) => void
+  onAddObligation?: () => void
+  onAddAsset?: () => void
 }
 
 function CurrencySelect({
@@ -172,6 +174,8 @@ interface SectionTableProps {
   /** Override the records used for the totals footer (e.g. expanded children instead of stale group parent). */
   totalRecords?: FinancialRecord[]
   extraRows?: ExtraRow[]
+  /** Override the + button behavior. When provided, clicking + calls this instead of addNewRow. */
+  onAddClick?: () => void
   onCreate?: (record: FinancialRecord) => void
   onEdit?: (record: FinancialRecord, previous: FinancialRecord) => void
   onDelete?: (record: FinancialRecord) => void
@@ -199,6 +203,7 @@ function SectionTable({
   readOnly,
   totalRecords,
   extraRows,
+  onAddClick,
   onCreate,
   onEdit,
   onDelete,
@@ -376,7 +381,7 @@ function SectionTable({
             size="sm"
             variant="ghost"
             className="h-6 w-6 p-0 text-white hover:bg-white/20"
-            onClick={addNewRow}
+            onClick={onAddClick ?? addNewRow}
             aria-label={`Agregar fila a ${title}`}
           >
             <Plus className="h-4 w-4" />
@@ -862,6 +867,8 @@ export function DashboardSheet({
   onBreakdown,
   onDeleteWithComment,
   onEditAmountWithComment,
+  onAddObligation,
+  onAddAsset,
 }: DashboardSheetProps) {
   const { settings } = useSettings()
   const { convertCurrencies, baseCurrency, exchangeRates } = settings
@@ -958,6 +965,8 @@ export function DashboardSheet({
               records={ingresos}
               allRecords={records}
               valueLabel="Flujo de Caja"
+              linkType="activo"
+              linkLabel="Activo"
               readOnly={readOnly}
               onCreate={onCreate}
               onEdit={onEdit}
@@ -1065,6 +1074,7 @@ export function DashboardSheet({
             totalRecords={activosForTotal}
             valueLabel="Valor"
             readOnly={readOnly}
+            onAddClick={onAddAsset}
             onCreate={onCreate}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -1081,6 +1091,7 @@ export function DashboardSheet({
             valueLabel="Valor"
             readOnly={readOnly}
             extraRows={obligationExtraRows}
+            onAddClick={onAddObligation}
             onCreate={onCreate}
             onEdit={onEdit}
             onDelete={onDelete}

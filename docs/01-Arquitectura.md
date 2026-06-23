@@ -56,10 +56,26 @@ El estado de la aplicación se gestiona mediante dos React Context providers ani
 | `/activos/[id]` | `app/(dashboard)/activos/[id]/page.tsx` | Server Component (async) |
 | `/snapshots` | `app/(dashboard)/snapshots/page.tsx` | Client Component |
 | `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Client Component |
-| `/movimientos` | `app/(dashboard)/movimientos/page.tsx` | Client Component |
+| `/gastos` | `app/(dashboard)/gastos/page.tsx` | Client Component |
+| `/ingresos` | `app/(dashboard)/ingresos/page.tsx` | Client Component |
+| `/libro-contable` | `app/(dashboard)/libro-contable/page.tsx` | Client Component |
+| `/historial` | `app/(dashboard)/historial/page.tsx` | Client Component |
+| `/movimientos` | redirect → `/historial` | — |
 | `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Client Component |
 
 > **Nota**: `/activos/[id]` es un Server Component que llama directamente a `loadAsset()` (Server Action). El resto de las páginas del dashboard consumen datos a través del `FinanceContext`.
+
+### Capas de registro financiero
+
+El sistema mantiene tres capas separadas para distintos propósitos:
+
+| Capa | Tabla DB | Propósito | UI |
+|------|----------|-----------|-----|
+| **Libro Contable** | `journal_entries` | Asientos de doble entrada por operación financiera | `/libro-contable` |
+| **Historial de Auditoría** | `movements` (AuditLog) | CRUD: creado/editado/eliminado | `/historial` |
+| **Movimientos de Activos** | `financial_movements` | Tracking operacional por activo (BUY/SELL/DEPOSIT…) | `/activos/[id]` |
+
+Ver arquitectura completa en `docs/financial-domain-architecture.md`.
 
 ## Backend
 

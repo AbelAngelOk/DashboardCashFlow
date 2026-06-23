@@ -1,6 +1,8 @@
 export type RecordType = "activo" | "pasivo" | "ingreso" | "gasto"
 export type Currency = "USD" | "EUR" | "MXN" | "ARS" | "USDT"
 
+export type RecordStatus = "ACTIVE" | "PENDING" | "CANCELLED"
+
 export interface FinancialRecord {
   id: string
   type: RecordType
@@ -11,6 +13,7 @@ export interface FinancialRecord {
   parentId?: string
   assetType?: string
   isGroupParent?: boolean
+  status?: RecordStatus
 }
 
 export interface Snapshot {
@@ -19,6 +22,7 @@ export interface Snapshot {
   period: string
   createdAt: string
   records: FinancialRecord[]
+  data?: Record<string, unknown>
 }
 
 export type MovementAction = "creado" | "editado" | "eliminado"
