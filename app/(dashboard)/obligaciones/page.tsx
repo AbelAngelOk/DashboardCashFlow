@@ -1,12 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Plus, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useObligations } from "@/components/obligations-store"
 import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
+import { MarkerPicker } from "@/components/markers/marker-picker"
+import { loadEntityMarkersForIds } from "@/lib/marker-actions"
+import type { MarkerDefinition } from "@/lib/marker-types"
 import {
   type Obligation,
   type ObligationStatus,
@@ -77,6 +80,19 @@ export default function ObligacionesPage() {
   const router = useRouter()
   const [filter, setFilter] = useState<ObligationStatus | "ALL">("ALL")
   const [formOpen, setFormOpen] = useState(false)
+  const [markerMap, setMarkerMap] = useState<Record<string, MarkerDefinition>>({})
+
+  const refreshMarkers = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return
+    try {
+      const map = await loadEntityMarkersForIds(ids, "OBLIGATION")
+      setMarkerMap(map)
+    } catch { /* non-critical */ }
+  }, [])
+
+  useEffect(() => {
+    refreshMarkers(obligations.map((o) => o.id))
+  }, [obligations, refreshMarkers])
 
   const filtered = filter === "ALL" ? obligations : obligations.filter((o) => o.status === filter)
 
@@ -111,11 +127,17 @@ export default function ObligacionesPage() {
 
       {/* Mobile: cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.map((o) => (
+        {filtered.map((o) => {
+          const marker = markerMap[o.id] ?? null
+          return (
           <Link
             key={o.id}
             href={`/obligaciones/${o.id}`}
             className="block border-2 border-black p-4 hover:bg-gray-50 active:bg-gray-100"
+            style={marker ? {
+              borderLeft: `4px solid ${marker.color}`,
+              backgroundColor: `${marker.color}18`,
+            } : undefined}
           >
             <div className="flex items-start justify-between gap-2">
               <span className="font-semibold leading-snug">{o.name}</span>
@@ -135,7 +157,8 @@ export default function ObligacionesPage() {
               </div>
             )}
           </Link>
-        ))}
+          )
+        })}
 
         {filtered.length === 0 && (
           <p className="py-6 text-center text-sm text-gray-500">
@@ -157,32 +180,48 @@ export default function ObligacionesPage() {
           <div className="w-10 px-1 py-2" />
         </div>
 
-        {filtered.map((o) => (
-          <Link
-            key={o.id}
-            href={`/obligaciones/${o.id}`}
-            className="flex items-center border-b border-black text-sm hover:bg-gray-50"
-          >
-            <div className="flex-1 px-3 py-2 font-medium">{o.name}</div>
-            <div className="w-28 px-3 py-2 text-xs text-gray-500">
-              {OBLIGATION_TYPE_LABELS[o.obligationType]}
+        {filtered.map((o) => {
+          const marker = markerMap[o.id] ?? null
+          return (
+            <div
+              key={o.id}
+              className="relative flex items-center border-b border-black text-sm hover:bg-gray-50"
+              style={marker ? {
+                borderLeft: `4px solid ${marker.color}`,
+                backgroundColor: `${marker.color}18`,
+              } : undefined}
+            >
+              <Link
+                href={`/obligaciones/${o.id}`}
+                className="flex flex-1 items-center"
+              >
+                <div className="flex-1 px-3 py-2 font-medium">{o.name}</div>
+                <div className="w-28 px-3 py-2 text-xs text-gray-500">
+                  {OBLIGATION_TYPE_LABELS[o.obligationType]}
+                </div>
+                <div className="w-44 px-3 py-2 text-right">
+                  <ObligationValueCell obligation={o} />
+                </div>
+                <div className="w-28 px-3 py-2 text-center text-xs text-gray-600">
+                  {o.nextDueDate ? formatObligationDate(o.nextDueDate) : "—"}
+                </div>
+                <div className="w-24 px-3 py-2 text-center">
+                  <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[o.status]}`}>
+                    {OBLIGATION_STATUS_LABELS[o.status]}
+                  </span>
+                </div>
+              </Link>
+              <div className="flex w-10 items-center justify-center px-1 py-2 text-center text-gray-400">
+                <MarkerPicker
+                  entityId={o.id}
+                  entityType="OBLIGATION"
+                  currentMarker={marker}
+                  onChanged={() => refreshMarkers(obligations.map((x) => x.id))}
+                />
+              </div>
             </div>
-            <div className="w-44 px-3 py-2 text-right">
-              <ObligationValueCell obligation={o} />
-            </div>
-            <div className="w-28 px-3 py-2 text-center text-xs text-gray-600">
-              {o.nextDueDate ? formatObligationDate(o.nextDueDate) : "—"}
-            </div>
-            <div className="w-24 px-3 py-2 text-center">
-              <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${STATUS_COLORS[o.status]}`}>
-                {OBLIGATION_STATUS_LABELS[o.status]}
-              </span>
-            </div>
-            <div className="w-10 px-1 py-2 text-center text-gray-400">
-              <ChevronRight className="h-4 w-4" />
-            </div>
-          </Link>
-        ))}
+          )
+        })}
 
         {filtered.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-gray-500">

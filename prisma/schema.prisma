@@ -19,17 +19,20 @@ model Record {
   linkedTo String? @map("linked_to")
 
   // Nuevos campos — nullable para compatibilidad con datos existentes
-  userId        String?   @map("user_id")
-  description   String?
-  operationDate DateTime? @map("operation_date")
-  deletedAt     DateTime? @map("deleted_at")
-  status        String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "CANCELLED"
-  assetType     String?   @map("asset_type")
-  ticker        String?
-  currentQty    Decimal?  @map("current_quantity") @db.Decimal(18, 8)
-  avgBuyPrice   Decimal?  @map("avg_buy_price")    @db.Decimal(18, 4)
-  parentId      String?   @map("parent_id")
-  metadata      Json?
+  userId            String?   @map("user_id")
+  description       String?
+  operationDate     DateTime? @map("operation_date")
+  deletedAt         DateTime? @map("deleted_at")
+  status            String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "CANCELLED" | "HISTORICAL" | "ARCHIVED"
+  assetType         String?   @map("asset_type")
+  ticker            String?
+  currentQty        Decimal?  @map("current_quantity")    @db.Decimal(18, 8)
+  avgBuyPrice       Decimal?  @map("avg_buy_price")       @db.Decimal(18, 4)
+  parentId          String?   @map("parent_id")
+  metadata          Json?
+  createdAt         DateTime  @default(now())              @map("created_at")
+  effectiveDate     DateTime?                              @map("effective_date")
+  previousVersionId String?                               @map("previous_version_id")
 
   user               User?               @relation(fields: [userId], references: [id])
   groups             RecordGroup[]
@@ -37,6 +40,10 @@ model Record {
   auditLogs          AuditLog[]
   parent             Record?             @relation("RecordChildren", fields: [parentId], references: [id])
   children           Record[]            @relation("RecordChildren")
+  previousVersion    Record?             @relation("RecordVersions", fields: [previousVersionId], references: [id])
+  nextVersions       Record[]            @relation("RecordVersions")
+  gastoLinks         GastoIngresoLink[]  @relation("GastoLinks")
+  ingresoLinks       GastoIngresoLink[]  @relation("IngresoLinks")
 
   @@map("records")
   @@index([userId])
@@ -119,6 +126,9 @@ model User {
   obligations        Obligation[]
   obligationPayments ObligationPayment[]
   journalEntries     JournalEntry[]
+  gastoIngresoLinks  GastoIngresoLink[]
+  markers            Marker[]
+  entityMarkers      EntityMarker[]
 
   @@map("users")
 }
@@ -273,4 +283,60 @@ model RecordGroup {
 
   @@id([recordId, groupId])
   @@map("record_groups")
+}
+
+// ── Módulo: Links Gasto↔Ingreso (N:M) ────────────────────────────────────────
+
+model GastoIngresoLink {
+  id               String   @id @default(uuid())
+  userId           String   @map("user_id")
+  gastoId          String   @map("gasto_id")
+  ingresoId        String   @map("ingreso_id")
+  attributedAmount Decimal  @db.Decimal(18, 4) @map("attributed_amount")
+  currency         String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  user    User   @relation(fields: [userId], references: [id])
+  gasto   Record @relation("GastoLinks",   fields: [gastoId],   references: [id])
+  ingreso Record @relation("IngresoLinks", fields: [ingresoId], references: [id])
+
+  @@unique([gastoId, ingresoId])
+  @@map("gasto_ingreso_links")
+  @@index([userId])
+  @@index([gastoId])
+  @@index([ingresoId])
+}
+
+// ── Módulo: Marcadores Visuales ───────────────────────────────────────────────
+
+model Marker {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  name      String
+  color     String   // hex color: "#EF4444"
+  order     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user          User           @relation(fields: [userId], references: [id])
+  entityMarkers EntityMarker[]
+
+  @@map("markers")
+  @@index([userId])
+}
+
+model EntityMarker {
+  id         String   @id @default(uuid())
+  markerId   String   @map("marker_id")
+  entityId   String   @map("entity_id")   // record.id or obligation.id
+  entityType String   @map("entity_type") // "RECORD" | "OBLIGATION"
+  userId     String   @map("user_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  marker Marker @relation(fields: [markerId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@unique([entityId, entityType])
+  @@map("entity_markers")
+  @@index([userId])
+  @@index([entityId, entityType])
 }

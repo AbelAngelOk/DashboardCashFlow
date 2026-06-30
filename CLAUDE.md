@@ -191,7 +191,13 @@ No BoardManager for GROUP type.
 
 ### Patterns to know
 
-- **Soft-delete**: assets and records use `deletedAt` timestamp; queries always filter `deletedAt: null`
+- **Soft-delete (activos/pasivos)**: use `deletedAt` timestamp; queries always filter `deletedAt: null`. NEVER use `deletedAt` for ingresos or gastos.
+- **Status model for ingresos/gastos**: ACTIVE | PENDING | CANCELLED | HISTORICAL | ARCHIVED.
+  - `HISTORICAL`: set when (a) deleted from dashboard, or (b) superseded by a new period version.
+  - `ARCHIVED`: explicitly archived by user from /ingresos or /gastos module pages.
+  - NEVER set `deletedAt` on ingreso or gasto — use `status` instead.
+  - `PENDING` and `CANCELLED` remain for obligation-linked gastos (no change).
+- **Versioning (ingresos/gastos)**: when creating a "new period" version, always set `previousVersionId` on the new record and `status="HISTORICAL"` on the old record in the same DB transaction. Use `editOrVersionRecord()` from `lib/versioning-actions.ts`.
 - **Asset deletion in dashboard**: calls `zeroOutAsset()` (sets amount=0, creates EXTRACT movement, optionally creates ingreso) — does NOT soft-delete the record
 - **Asset deletion in /activos**: still calls `deleteRecord()` from context (soft-delete via `dbDeleteRecord`)
 - **Asset creation**: `AssetFormDialog` calls `createAsset()` (Server Action) then `reload()` — does NOT call `createRecord()` to avoid a duplicate DB insert
@@ -199,6 +205,9 @@ No BoardManager for GROUP type.
 - **Debounce**: comment updates are debounced 600ms before DB write (both `/movimientos` and `/historial`)
 - **Multi-select filter**: `/activos` type filter is multi-select; buttons toggle, "Todos" clears selection
 - **URL-synced state**: `/historial` uses `useSearchParams()` + `router.replace()` for filters and pagination — requires Suspense boundary, hence the Server Component `page.tsx` wrapper
+- **Markers**: entity markers live in `entity_markers` table. One marker per entity at a time (`@@unique([entityId, entityType])`). Use `setEntityMarker()` from `lib/marker-actions.ts` — it upserts (replaces existing). Never delete a record just to remove its marker; delete only the `EntityMarker` row.
+- **Gasto↔Ingreso links**: N:M relationship in `gasto_ingreso_links`. `attributedAmount` must be > 0. Validation of over-attribution is soft (warn, don't block). Links survive status changes (HISTORICAL gastos keep their links).
+- **NumericInput**: all numeric inputs use `components/ui/numeric-input.tsx`. If user types `=expr`, it evaluates as math on blur. Only the numeric result is persisted. Uses a safe recursive descent parser — never `eval()`.
 
 ### Styling conventions
 

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -165,7 +166,7 @@ export function BondPanel({ asset }: BondPanelProps) {
               <div className="flex gap-3">
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Monto</Label>
-                  <Input type="number" value={addAmount} onChange={(e) => setAddAmount(e.target.value)} placeholder="0.00" className="border-2 border-black" />
+                  <NumericInput value={addAmount} onChange={setAddAmount} placeholder="0.00" className="border-2 border-black" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Moneda</Label>

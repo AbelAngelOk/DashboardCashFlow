@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -262,10 +263,9 @@ export function ObligationFormDialog({ open, onOpenChange, onCreated }: Props) {
               {obligationType === "FIXED" && (
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Monto pendiente inicial *</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     value={fixedAmount}
-                    onChange={(e) => setFixedAmount(e.target.value)}
+                    onChange={setFixedAmount}
                     placeholder="0.00"
                     className="border-2 border-black rounded-none focus-visible:ring-0"
                   />
@@ -288,10 +288,9 @@ export function ObligationFormDialog({ open, onOpenChange, onCreated }: Props) {
                     </div>
                     <div className="flex flex-1 flex-col gap-1">
                       <Label className="text-xs font-bold uppercase">Monto por cuota *</Label>
-                      <Input
-                        type="number"
+                      <NumericInput
                         value={installmentAmount}
-                        onChange={(e) => setInstallmentAmount(e.target.value)}
+                        onChange={setInstallmentAmount}
                         placeholder="0.00"
                         className="border-2 border-black rounded-none focus-visible:ring-0"
                       />
@@ -353,10 +352,9 @@ export function ObligationFormDialog({ open, onOpenChange, onCreated }: Props) {
                             ))}
                           </SelectContent>
                         </Select>
-                        <Input
-                          type="number"
+                        <NumericInput
                           value={rule.expectedAmount}
-                          onChange={(e) => updateRule(rule.id, "expectedAmount", e.target.value)}
+                          onChange={(v) => updateRule(rule.id, "expectedAmount", v)}
                           placeholder="Monto"
                           className="h-8 w-28 border border-gray-300 rounded focus-visible:ring-0 text-sm"
                         />

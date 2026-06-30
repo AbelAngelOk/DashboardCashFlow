@@ -170,6 +170,62 @@
 
 ---
 
+## RN-19: Eliminación lógica de ingresos y gastos mediante status
+
+**Descripción**: Eliminar un ingreso o gasto desde el Dashboard NO usa `deletedAt`. En su lugar, se cambia `status = "HISTORICAL"`. El registro sigue existiendo y es visible en `/ingresos` y `/gastos` con filtro de estado "Históricos".
+
+**Comportamiento de dbDeleteRecord()**: Si `record.type === "ingreso" || record.type === "gasto"` → actualiza `status = "HISTORICAL"`. Para activos y pasivos → mantiene el comportamiento original de `deletedAt`.
+
+**Archivos**: `lib/actions.ts` → `dbDeleteRecord()` (bifurcación por tipo)
+
+**Riesgo**: Registros con `deletedAt` de versiones anteriores (antes del deploy) coexisten con los nuevos registros HISTORICAL. Son datos legados y se ignoran; no tienen impacto en la funcionalidad nueva.
+
+---
+
+## RN-20: Versionado de ingresos y gastos
+
+**Descripción**: Al editar un ingreso o gasto, el usuario puede elegir entre (a) editar el registro existente o (b) crear un "nuevo período". Si elige nuevo período, se realiza en una sola transacción: (1) `status = "HISTORICAL"` en el registro antiguo, (2) creación del nuevo registro con `status = "ACTIVE"` y `previousVersionId = oldId`. Se crea un nuevo `JournalEntry` para el nuevo registro; los asientos del registro anterior se conservan intactos.
+
+**Archivos**: `lib/versioning-actions.ts` → `editOrVersionRecord()`
+
+**Riesgo**: Si la transacción falla a mitad (después del HISTORICAL pero antes del CREATE), el registro anterior quedará HISTORICAL sin sucesor. Al restaurar desde /ingresos o /gastos, el usuario puede reactivarlo con `restoreIngreso()`/`restoreGasto()`.
+
+---
+
+## RN-21: Links N:M entre gastos e ingresos
+
+**Descripción**: Un gasto puede estar financiado por cero, uno o múltiples ingresos. Cada link registra el `attributedAmount` de ese ingreso hacia ese gasto. La suma de `attributedAmount` puede ser menor al monto total del gasto (el resto viene de fuentes no registradas) pero no puede ser negativa.
+
+**Validación**: `attributedAmount > 0`. La sobre-atribución (suma > gasto.amount) genera una advertencia visual pero no bloquea el guardado.
+
+**Gestión**: Los links se gestionan desde ambos lados — desde el formulario del gasto (panel "Financiado por") y desde el formulario del ingreso (panel "Gastos financiados"). El mismo link creado desde un lado es visible en el otro.
+
+**Archivos**: `lib/link-actions.ts` → `createGastoIngresoLink()`, `deleteGastoIngresoLink()`
+
+**Riesgo**: Un link entre un gasto HISTORICAL y un ingreso ACTIVE queda "huérfano" visualmente (el gasto no aparece en el dashboard). Los links se conservan intencionalmente para trazabilidad histórica.
+
+---
+
+## RN-22: Marcadores visuales — un marcador por entidad
+
+**Descripción**: El usuario puede asignar un marcador a cualquier fila de activo, ingreso, gasto u obligación. Solo puede haber un marcador activo por entidad a la vez. Asignar un marcador nuevo reemplaza automáticamente al anterior (upsert). El marcador se almacena en `entity_markers` y su estilo visual (borde + fondo semi-transparente) se aplica dinámicamente con el color del marcador.
+
+**Archivos**: `lib/marker-actions.ts` → `setEntityMarker()`, `removeEntityMarker()`, `loadEntityMarkersForIds()`
+
+**Riesgo**: Al eliminar un marcador globalmente, todos sus `EntityMarker` se eliminan por CASCADE. Las filas que usaban ese marcador vuelven al estilo default sin ninguna acción adicional requerida.
+
+---
+
+## RN-23: loadData() excluye ingresos y gastos HISTORICAL/ARCHIVED del Dashboard
+
+**Descripción**: `loadData()` en `lib/actions.ts` filtra los records devueltos al Dashboard usando `status = "ACTIVE"` tanto para gastos como para ingresos. Solo registros ACTIVE aparecen en el Estado de Resultados y el Balance del Dashboard.
+
+**Archivos**: `lib/actions.ts` → `loadData()` (cláusula WHERE con OR multi-tipo)
+
+**Riesgo**: Si el `FinanceProvider` tiene datos en caché que aún contienen registros HISTORICAL (por una mutación optimista), el Dashboard puede mostrar momentáneamente registros incorrectos hasta el próximo `reload()`.
+
+---
+
 ## RN-18: El modo de conversión persiste en localStorage
 
 **Descripción**: La configuración del modo de conversión de monedas (moneda base, tasas, switches) se almacena en `localStorage` bajo la clave `cashflow:settings`. Persiste entre sesiones del mismo navegador y es independiente por dispositivo.

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { ChevronDown, ChevronRight, Network, Trash2, Unlink } from "lucide-react"
 import { formatAmount, type FinancialRecord } from "@/lib/finance"
@@ -8,6 +8,9 @@ import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
 import { useSettings } from "@/components/settings-store"
 import { GroupValueDisplay } from "@/components/group-value-display"
+import { MarkerPicker } from "@/components/markers/marker-picker"
+import { loadEntityMarkersForIds } from "@/lib/marker-actions"
+import type { MarkerDefinition } from "@/lib/marker-types"
 import {
   Dialog,
   DialogContent,
@@ -125,6 +128,20 @@ export function AssetList({
   const [pendingPhysicalDelete, setPendingPhysicalDelete] = useState<FinancialRecord | null>(null)
   const [pendingDeleteGroup, setPendingDeleteGroup] = useState<FinancialRecord | null>(null)
   const [liquidateCreateIngreso, setLiquidateCreateIngreso] = useState(true)
+  const [markerMap, setMarkerMap] = useState<Record<string, MarkerDefinition>>({})
+
+  const refreshMarkers = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return
+    try {
+      const map = await loadEntityMarkersForIds(ids, "RECORD")
+      setMarkerMap(map)
+    } catch { /* non-critical */ }
+  }, [])
+
+  useEffect(() => {
+    const ids = all.map((r) => r.id)
+    refreshMarkers(ids)
+  }, [all, refreshMarkers])
 
   const toggle = (id: string) =>
     setExpandedIds((prev) => {
@@ -186,7 +203,7 @@ export function AssetList({
           <div className="flex-1 px-3 py-2">Nombre</div>
           <div className="w-36 px-3 py-2">Tipo</div>
           <div className="w-44 px-3 py-2 text-right">Valor</div>
-          <div className="w-16 px-3 py-2" />
+          <div className="w-20 px-3 py-2" />
         </div>
 
         {filtered.map((record) => {
@@ -195,12 +212,20 @@ export function AssetList({
           const isGroup = record.isGroupParent || children.length > 0
           const isSelected = selectedIds?.has(record.id) ?? false
 
+          const marker = markerMap[record.id] ?? null
+
           return (
             <div
               key={record.id}
               data-testid={isGroup ? `activos-group-row-${record.id}` : `activos-row-${record.id}`}
             >
-              <div className={`group flex border-b border-black text-sm hover:bg-gray-50 ${isSelected ? "bg-gray-100" : ""}`}>
+              <div
+                className={`group flex border-b border-black text-sm hover:bg-gray-50 ${isSelected ? "bg-gray-100" : ""}`}
+                style={marker ? {
+                  borderLeft: `4px solid ${marker.color}`,
+                  backgroundColor: `${marker.color}18`,
+                } : undefined}
+              >
                 {selectMode && (
                   <div className="flex w-10 items-center justify-center px-2">
                     <input
@@ -249,44 +274,52 @@ export function AssetList({
                     </>
                   )}
                 </div>
-                <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  <Link
-                    href={`/activos/${record.id}`}
-                    className="text-gray-400 hover:text-black text-sm"
-                    aria-label="Ver detalle"
-                  >
-                    →
-                  </Link>
-                  {!selectMode && (
-                    isGroup ? (
-                      <button
-                        onClick={() => setPendingDeleteGroup(record)}
-                        className="text-gray-400 hover:text-rose-700"
-                        aria-label="Eliminar grupo"
-                        title="Eliminar grupo (los activos quedan sueltos)"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    ) : (
-                      (onLiquidate || onPhysicalDelete) && (
+                <div className="flex w-20 items-center justify-center gap-1 px-1">
+                  <MarkerPicker
+                    entityId={record.id}
+                    entityType="RECORD"
+                    currentMarker={marker}
+                    onChanged={() => refreshMarkers(all.map((r) => r.id))}
+                  />
+                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <Link
+                      href={`/activos/${record.id}`}
+                      className="text-gray-400 hover:text-black text-sm"
+                      aria-label="Ver detalle"
+                    >
+                      →
+                    </Link>
+                    {!selectMode && (
+                      isGroup ? (
                         <button
-                          onClick={() => {
-                            if (record.amount > 0) {
-                              setLiquidateCreateIngreso(true)
-                              setPendingLiquidate(record)
-                            } else {
-                              setPendingPhysicalDelete(record)
-                            }
-                          }}
+                          onClick={() => setPendingDeleteGroup(record)}
                           className="text-gray-400 hover:text-rose-700"
-                          aria-label={record.amount > 0 ? "Liquidar activo" : "Eliminar activo"}
-                          title={record.amount > 0 ? "Liquidar activo (pone balance en 0)" : "Eliminar activo definitivamente"}
+                          aria-label="Eliminar grupo"
+                          title="Eliminar grupo (los activos quedan sueltos)"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
+                      ) : (
+                        (onLiquidate || onPhysicalDelete) && (
+                          <button
+                            onClick={() => {
+                              if (record.amount > 0) {
+                                setLiquidateCreateIngreso(true)
+                                setPendingLiquidate(record)
+                              } else {
+                                setPendingPhysicalDelete(record)
+                              }
+                            }}
+                            className="text-gray-400 hover:text-rose-700"
+                            aria-label={record.amount > 0 ? "Liquidar activo" : "Eliminar activo"}
+                            title={record.amount > 0 ? "Liquidar activo (pone balance en 0)" : "Eliminar activo definitivamente"}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )
                       )
-                    )
-                  )}
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -311,24 +344,32 @@ export function AssetList({
                       {formatAmount(child.amount, child.currency)}{" "}
                       <span className="text-xs text-gray-300">{child.currency}</span>
                     </div>
-                    <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Link
-                        href={`/activos/${child.id}`}
-                        className="text-gray-400 hover:text-black text-sm"
-                        aria-label="Ver detalle"
-                      >
-                        →
-                      </Link>
-                      {!selectMode && onRemoveFromGroup && (
-                        <button
-                          onClick={() => onRemoveFromGroup(child.id)}
-                          className="text-gray-400 hover:text-amber-600"
-                          aria-label="Remover del grupo"
-                          title="Remover del grupo"
+                    <div className="flex w-20 items-center justify-center gap-1 px-1">
+                      <MarkerPicker
+                        entityId={child.id}
+                        entityType="RECORD"
+                        currentMarker={markerMap[child.id] ?? null}
+                        onChanged={() => refreshMarkers(all.map((r) => r.id))}
+                      />
+                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Link
+                          href={`/activos/${child.id}`}
+                          className="text-gray-400 hover:text-black text-sm"
+                          aria-label="Ver detalle"
                         >
-                          <Unlink className="h-3.5 w-3.5" />
-                        </button>
-                      )}
+                          →
+                        </Link>
+                        {!selectMode && onRemoveFromGroup && (
+                          <button
+                            onClick={() => onRemoveFromGroup(child.id)}
+                            className="text-gray-400 hover:text-amber-600"
+                            aria-label="Remover del grupo"
+                            title="Remover del grupo"
+                          >
+                            <Unlink className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))}

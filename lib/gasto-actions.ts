@@ -5,6 +5,7 @@ import { authOptions } from "./auth"
 import { prisma } from "./db"
 import type { Currency } from "./finance"
 import type { AssetType } from "./assets"
+import type { GastoIngresoLink } from "./link-types"
 import { addMovement } from "./assets-actions"
 import { createJournalEntry } from "./journal-actions"
 
@@ -38,16 +39,21 @@ export interface GastoWithSource {
   currency: Currency
   status: string
   operationDate?: string
+  createdAt?: string
+  effectiveDate?: string
+  previousVersionId?: string
+  nextVersionId?: string
   source: GastoSource
+  links?: GastoIngresoLink[]
 }
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 
-export async function loadGastos(): Promise<GastoWithSource[]> {
+export async function loadGastos(statuses: string[] = ["ACTIVE"]): Promise<GastoWithSource[]> {
   const userId = await getUserId()
 
   const gastos = await prisma.record.findMany({
-    where: { userId, type: "gasto", status: "ACTIVE", deletedAt: null },
+    where: { userId, type: "gasto", status: { in: statuses }, deletedAt: null },
     orderBy: { operationDate: "desc" },
   })
 
@@ -102,6 +108,12 @@ export async function loadGastos(): Promise<GastoWithSource[]> {
     }
   }
 
+  // Build nextVersionId map: previousVersionId → id
+  const nextVersionMap = new Map<string, string>()
+  for (const g of gastos) {
+    if (g.previousVersionId) nextVersionMap.set(g.previousVersionId, g.id)
+  }
+
   return gastos.map((g) => {
     const obligationInfo = obligationByGastoId.get(g.id)
     let source: GastoSource
@@ -121,9 +133,60 @@ export async function loadGastos(): Promise<GastoWithSource[]> {
       currency: g.currency as Currency,
       status: g.status,
       operationDate: g.operationDate?.toISOString(),
+      createdAt: g.createdAt?.toISOString(),
+      previousVersionId: g.previousVersionId ?? undefined,
+      nextVersionId: nextVersionMap.get(g.id),
       source,
     }
   })
+}
+
+// ── Status mutations ──────────────────────────────────────────────────────────
+
+export async function archiveGasto(id: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.update({
+    where: { id, userId, type: "gasto" },
+    data: { status: "ARCHIVED" },
+  })
+}
+
+export async function restoreGasto(id: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.update({
+    where: { id, userId, type: "gasto" },
+    data: { status: "ACTIVE" },
+  })
+}
+
+export async function editGasto(
+  id: string,
+  data: { name: string; amount: number; currency: Currency; effectiveDate?: Date },
+): Promise<void> {
+  const userId = await getUserId()
+  await prisma.$transaction([
+    prisma.record.update({
+      where: { id, userId, type: "gasto" },
+      data: {
+        name: data.name,
+        amount: data.amount,
+        currency: data.currency,
+        ...(data.effectiveDate ? { effectiveDate: data.effectiveDate } : {}),
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        id: crypto.randomUUID(),
+        date: auditDate(),
+        action: "editado",
+        recordType: "gasto",
+        recordName: data.name,
+        detail: `Gasto editado: "${data.name}" por ${data.amount} ${data.currency}`,
+        userId,
+        recordId: id,
+      },
+    }),
+  ])
 }
 
 // ── Create: free gasto ────────────────────────────────────────────────────────

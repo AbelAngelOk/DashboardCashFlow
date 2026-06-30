@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -226,17 +227,17 @@ export function RebalanceBotPanel({ asset }: RebalanceBotPanelProps) {
               <div className="flex gap-3">
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Precio inicial</Label>
-                  <Input type="number" value={addPrice} onChange={(e) => setAddPrice(e.target.value)} placeholder="0.00" className="border-2 border-black" />
+                  <NumericInput value={addPrice} onChange={setAddPrice} placeholder="0.00" className="border-2 border-black" />
                 </div>
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Cantidad</Label>
-                  <Input type="number" value={addQty} onChange={(e) => setAddQty(e.target.value)} placeholder="0" className="border-2 border-black" />
+                  <NumericInput value={addQty} onChange={setAddQty} placeholder="0" className="border-2 border-black" />
                 </div>
               </div>
               <div className="flex gap-3">
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Monto invertido</Label>
-                  <Input type="number" value={addInvested} onChange={(e) => setAddInvested(e.target.value)} placeholder="Auto (precio×qty)" className="border-2 border-black" />
+                  <NumericInput value={addInvested} onChange={setAddInvested} placeholder="Auto (precio×qty)" className="border-2 border-black" />
                 </div>
                 <div className="flex flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Moneda</Label>
@@ -266,7 +267,7 @@ export function RebalanceBotPanel({ asset }: RebalanceBotPanelProps) {
             </DialogHeader>
             <div className="px-4 py-4">
               <Label className="text-xs font-bold uppercase">Monto total a extraer ({asset.currency})</Label>
-              <Input type="number" value={operationAmount} onChange={(e) => setOperationAmount(e.target.value)} placeholder="0.00" className="mt-1 border-2 border-black" autoFocus />
+              <NumericInput value={operationAmount} onChange={setOperationAmount} placeholder="0.00" className="mt-1 border-2 border-black" autoFocus />
               <p className="mt-2 text-xs text-gray-500">
                 Se reducirá la cantidad de cada activo proporcionalmente al valor de mercado actual.
               </p>
@@ -290,7 +291,7 @@ export function RebalanceBotPanel({ asset }: RebalanceBotPanelProps) {
             </DialogHeader>
             <div className="px-4 py-4">
               <Label className="text-xs font-bold uppercase">Monto del aporte ({asset.currency})</Label>
-              <Input type="number" value={operationAmount} onChange={(e) => setOperationAmount(e.target.value)} placeholder="0.00" className="mt-1 border-2 border-black" autoFocus />
+              <NumericInput value={operationAmount} onChange={setOperationAmount} placeholder="0.00" className="mt-1 border-2 border-black" autoFocus />
               <p className="mt-2 text-xs text-gray-500">
                 Se distribuirá el aporte proporcionalmente entre los activos según su inversión inicial y se actualizará el precio promedio.
               </p>

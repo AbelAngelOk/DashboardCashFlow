@@ -6,6 +6,7 @@ import Link from "next/link"
 import { ArrowLeft, Plus, Trash2, Pencil, Check, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import {
@@ -453,7 +454,7 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
             <div className="flex gap-2">
               <div className="flex flex-1 flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Monto *</Label>
-                <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
+                <NumericInput value={amount} onChange={setAmount} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Moneda</Label>
@@ -551,7 +552,7 @@ function ManualPaymentDialog({
           </div>
           <div className="flex flex-col gap-1">
             <Label className="text-xs font-bold uppercase">Monto ({obligation.currency}) *</Label>
-            <Input autoFocus type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
+            <NumericInput autoFocus value={amount} onChange={setAmount} placeholder="0.00" className="rounded-none border-2 border-black focus-visible:ring-0" />
           </div>
           {paymentType === "PAYMENT" && obligation.amount > 0 && (
             <p className="text-xs text-gray-500">

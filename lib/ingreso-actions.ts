@@ -4,6 +4,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import type { Currency } from "./finance"
+import type { GastoIngresoLink } from "./link-types"
 import { addMovement } from "./assets-actions"
 import { createJournalEntry } from "./journal-actions"
 
@@ -38,7 +39,12 @@ export interface IngresoWithSource {
   currency: Currency
   status: string
   operationDate?: string
+  createdAt?: string
+  effectiveDate?: string
+  previousVersionId?: string
+  nextVersionId?: string
   source: IngresoSource
+  links?: GastoIngresoLink[]
 }
 
 function guessSourceType(name: string): IngresoSourceType {
@@ -51,11 +57,11 @@ function guessSourceType(name: string): IngresoSourceType {
 
 // ── Load ──────────────────────────────────────────────────────────────────────
 
-export async function loadIngresos(): Promise<IngresoWithSource[]> {
+export async function loadIngresos(statuses: string[] = ["ACTIVE"]): Promise<IngresoWithSource[]> {
   const userId = await getUserId()
 
   const ingresos = await prisma.record.findMany({
-    where: { userId, type: "ingreso", status: "ACTIVE", deletedAt: null },
+    where: { userId, type: "ingreso", status: { in: statuses }, deletedAt: null },
     orderBy: { operationDate: "desc" },
   })
 
@@ -73,6 +79,12 @@ export async function loadIngresos(): Promise<IngresoWithSource[]> {
     for (const a of assets) {
       assetNameById.set(a.id, a.name)
     }
+  }
+
+  // Build nextVersionId map: previousVersionId → id
+  const nextVersionMap = new Map<string, string>()
+  for (const i of ingresos) {
+    if (i.previousVersionId) nextVersionMap.set(i.previousVersionId, i.id)
   }
 
   return ingresos.map((i) => {
@@ -98,9 +110,60 @@ export async function loadIngresos(): Promise<IngresoWithSource[]> {
       currency: i.currency as Currency,
       status: i.status,
       operationDate: i.operationDate?.toISOString(),
+      createdAt: i.createdAt?.toISOString(),
+      previousVersionId: i.previousVersionId ?? undefined,
+      nextVersionId: nextVersionMap.get(i.id),
       source,
     }
   })
+}
+
+// ── Status mutations ──────────────────────────────────────────────────────────
+
+export async function archiveIngreso(id: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.update({
+    where: { id, userId, type: "ingreso" },
+    data: { status: "ARCHIVED" },
+  })
+}
+
+export async function restoreIngreso(id: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.update({
+    where: { id, userId, type: "ingreso" },
+    data: { status: "ACTIVE" },
+  })
+}
+
+export async function editIngreso(
+  id: string,
+  data: { name: string; amount: number; currency: Currency; effectiveDate?: Date },
+): Promise<void> {
+  const userId = await getUserId()
+  await prisma.$transaction([
+    prisma.record.update({
+      where: { id, userId, type: "ingreso" },
+      data: {
+        name: data.name,
+        amount: data.amount,
+        currency: data.currency,
+        ...(data.effectiveDate ? { effectiveDate: data.effectiveDate } : {}),
+      },
+    }),
+    prisma.auditLog.create({
+      data: {
+        id: crypto.randomUUID(),
+        date: auditDate(),
+        action: "editado",
+        recordType: "ingreso",
+        recordName: data.name,
+        detail: `Ingreso editado: "${data.name}" por ${data.amount} ${data.currency}`,
+        userId,
+        recordId: id,
+      },
+    }),
+  ])
 }
 
 // ── Create: free ingreso ──────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -119,10 +120,9 @@ export function FixedTermPanel({ asset }: FixedTermPanelProps) {
               <Label className="text-xs font-bold uppercase">
                 Monto cobrado ({asset.currency})
               </Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={collectedAmount}
-                onChange={(e) => setCollectedAmount(e.target.value)}
+                onChange={setCollectedAmount}
                 className="mt-1 border-2 border-black"
                 autoFocus
               />

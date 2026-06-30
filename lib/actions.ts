@@ -65,9 +65,11 @@ export async function loadData(): Promise<{
         userId,
         deletedAt: null,
         // Gastos PENDING son internos del módulo Obligaciones; no aparecen en dashboard
+        // ingresos/gastos HISTORICAL y ARCHIVED se excluyen del dashboard
         OR: [
-          { type: { not: "gasto" } },
+          { type: { not: { in: ["gasto", "ingreso"] } } },
           { type: "gasto", status: "ACTIVE" },
+          { type: "ingreso", status: "ACTIVE" },
         ],
       },
       include: { _count: { select: { children: true } } },
@@ -199,11 +201,11 @@ export async function dbDeleteRecord(
   movement: Movement,
 ) {
   const userId = await getUserId()
+  const isFlowRecord = record.type === "ingreso" || record.type === "gasto"
   await prisma.$transaction([
-    // Soft delete
     prisma.record.update({
       where: { id: record.id, userId },
-      data: { deletedAt: new Date() },
+      data: isFlowRecord ? { status: "HISTORICAL" } : { deletedAt: new Date() },
     }),
     prisma.auditLog.create({
       data: {

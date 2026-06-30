@@ -19,13 +19,19 @@ users
   ├──< groups (userId)
   ├──< obligations (userId)
   ├──< obligation_payments (userId)
-  └──< journal_entries (userId)
+  ├──< journal_entries (userId)
+  ├──< gasto_ingreso_links (userId)     ← NUEVO
+  ├──< markers (userId)                  ← NUEVO
+  └──< entity_markers (userId)           ← NUEVO
 
 records
   ├──< records (parentId → self-referencia para grupos)
+  ├──< records (previousVersionId → self-referencia para versionado)  ← NUEVO
   ├──< financial_movements (recordId)
   ├──< audit_logs (recordId)
-  └──< record_groups (recordId)
+  ├──< record_groups (recordId)
+  ├──< gasto_ingreso_links (gastoId)     ← NUEVO
+  └──< gasto_ingreso_links (ingresoId)   ← NUEVO
 
 snapshots
   └──< snapshot_records (snapshotId)
@@ -41,6 +47,16 @@ obligations
   ├──< obligation_rules (obligationId)
   ├──< obligation_installments (obligationId)
   └──< obligation_payments (obligationId)
+
+markers
+  └──< entity_markers (markerId)         ← NUEVO
+
+gasto_ingreso_links [tabla pivote N:M]   ← NUEVO
+  ├── gastoId   → records
+  └── ingresoId → records
+
+entity_markers [tabla de asignación]     ← NUEVO
+  └── markerId → markers
 ```
 
 ---
@@ -86,6 +102,15 @@ Tabla polimórfica: alberga tanto registros financieros simples (ingresos, gasto
 | `avg_buy_price` | Decimal(18,4)? | Sí | Precio promedio de compra ponderado |
 | `parent_id` | String? | Sí | FK auto-referencia a `records.id` para agrupación |
 | `metadata` | Json? | Sí | Objeto JSON con datos tipo-específicos del activo (ver más abajo) |
+| `created_at` | DateTime | No | Fecha de creación del registro en el sistema (default: now()) ← NUEVO |
+| `effective_date` | DateTime? | Sí | Fecha efectiva del período (ej: inicio de "Salario Julio 2026") ← NUEVO |
+| `previous_version_id` | String? | Sí | FK auto-referencia a `records.id` de la versión anterior ← NUEVO |
+
+**Status values por tipo**:
+- `activo` / `pasivo`: `ACTIVE` → soft-delete via `deletedAt`
+- `ingreso` / `gasto`: `ACTIVE` | `PENDING` | `CANCELLED` | `HISTORICAL` | `ARCHIVED`
+  - `HISTORICAL`: eliminado desde Dashboard o reemplazado por nueva versión
+  - `ARCHIVED`: archivado manualmente desde /ingresos o /gastos
 
 **Índices**:
 - `(user_id)` — para filtrar por usuario
@@ -475,6 +500,78 @@ Libro contable de doble entrada. Cada evento financiero genera al menos un asien
 - `AuditLog` es para auditoría de CRUD. `FinancialMovement` es para tracking operacional de activos. `JournalEntry` es el libro contable financiero.
 - La cuenta `"efectivo"` es virtual — representa caja/banco del usuario sin un record real asociado.
 - Solo registra operaciones desde la fecha de deploy. Ver estrategia de migración en `docs/financial-domain-architecture.md`.
+
+---
+
+---
+
+## Tabla: `gasto_ingreso_links` ← NUEVA
+
+Modelo Prisma: `GastoIngresoLink`
+
+Relación N:M entre gastos e ingresos, con monto atribuido. Permite registrar que un gasto fue financiado parcialmente por uno o más ingresos.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `user_id` | String | No | FK a `users.id` |
+| `gasto_id` | String | No | FK a `records.id` del gasto financiado |
+| `ingreso_id` | String | No | FK a `records.id` del ingreso financiador |
+| `attributed_amount` | Decimal(18,4) | No | Monto del ingreso atribuido a este gasto |
+| `currency` | String | No | Moneda del monto atribuido |
+| `created_at` | DateTime | No | Timestamp de creación (default: now()) |
+
+**Restricciones**:
+- `UNIQUE(gasto_id, ingreso_id)` — un par gasto/ingreso solo puede tener un link. Ajustar el monto implica actualizar `attributed_amount`.
+
+**Índices**: `(user_id)`, `(gasto_id)`, `(ingreso_id)`
+
+**Notas**: La suma de `attributed_amount` de todos los links de un gasto no necesita igualar `gasto.amount` (el resto puede venir de fuentes no registradas). La validación es blanda (alerta, no bloqueo).
+
+---
+
+## Tabla: `markers` ← NUEVA
+
+Modelo Prisma: `Marker`
+
+Marcadores visuales definidos por el usuario. Se usan para resaltar filas en el Dashboard, /activos, /gastos, /ingresos, /obligaciones.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `user_id` | String | No | FK a `users.id` |
+| `name` | String | No | Nombre del marcador (ej: "Urgente", "Revisado") |
+| `color` | String | No | Código de color hexadecimal (ej: "#EF4444") |
+| `order` | Int | No | Orden en el selector (default: 0) |
+| `created_at` | DateTime | No | Timestamp de creación (default: now()) |
+
+**Índices**: `(user_id)`
+
+---
+
+## Tabla: `entity_markers` ← NUEVA
+
+Modelo Prisma: `EntityMarker`
+
+Asignación de un marcador a una entidad. Constraint `UNIQUE(entity_id, entity_type)` garantiza un marcador por entidad a la vez.
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por la DB |
+| `marker_id` | String | No | FK a `markers.id` (cascade delete) |
+| `entity_id` | String | No | ID de la entidad marcada (record.id o obligation.id) |
+| `entity_type` | String | No | `"RECORD"` \| `"OBLIGATION"` |
+| `user_id` | String | No | FK a `users.id` |
+| `created_at` | DateTime | No | Timestamp de creación (default: now()) |
+
+**Restricciones**: `UNIQUE(entity_id, entity_type)` — un marcador a la vez por entidad.
+
+**Índices**: `(user_id)`, `(entity_id, entity_type)`
+
+**Notas**:
+- `entity_id` es String (no FK tipada). Permite apuntar a `records` u `obligations` con el mismo modelo.
+- Al eliminar un marcador, `ON DELETE CASCADE` elimina todos sus `EntityMarker`.
+- Al hacer soft-delete de un record, el `EntityMarker` NO se elimina automáticamente (no hay FK). El marcador permanece en DB aunque el record esté HISTORICAL o con `deletedAt`.
 
 ---
 

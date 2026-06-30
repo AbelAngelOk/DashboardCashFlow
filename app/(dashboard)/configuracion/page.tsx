@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
+import { MarkerManagerDialog } from "@/components/markers/marker-manager-dialog"
 
 function SwitchRow({
   label,
@@ -85,6 +86,7 @@ export default function ConfiguracionPage() {
   const [newTypeName, setNewTypeName] = useState("")
   const [editingTypeId, setEditingTypeId] = useState<string | null>(null)
   const [editingTypeName, setEditingTypeName] = useState("")
+  const [markerManagerOpen, setMarkerManagerOpen] = useState(false)
 
   const handleAddCustomType = () => {
     if (!newTypeName.trim()) return
@@ -310,6 +312,26 @@ export default function ConfiguracionPage() {
           </div>
         </div>
       </div>
+
+      {/* Marcadores */}
+      <div className="border-2 border-black">
+        <div className="border-b-2 border-black bg-black px-4 py-2">
+          <h2 className="font-bold italic text-white">Marcadores Visuales</h2>
+        </div>
+        <div className="flex items-center justify-between px-4 py-3">
+          <p className="text-sm text-gray-600">
+            Crea marcadores de colores para resaltar entidades importantes.
+          </p>
+          <button
+            onClick={() => setMarkerManagerOpen(true)}
+            className="shrink-0 border-2 border-black bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-gray-800"
+          >
+            Gestionar marcadores
+          </button>
+        </div>
+      </div>
+
+      <MarkerManagerDialog open={markerManagerOpen} onOpenChange={setMarkerManagerOpen} />
     </div>
   )
 }

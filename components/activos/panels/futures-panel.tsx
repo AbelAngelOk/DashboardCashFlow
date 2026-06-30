@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -86,7 +87,7 @@ function AddPositionDialog({ assetId, currency: defaultCurr, currentAmount, onCl
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Monto</Label>
-              <Input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} placeholder="0.00" className="border-2 border-black" />
+              <NumericInput value={amount} onChange={setAmount} placeholder="0.00" className="border-2 border-black" />
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Moneda</Label>
@@ -99,11 +100,11 @@ function AddPositionDialog({ assetId, currency: defaultCurr, currentAmount, onCl
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Cantidad</Label>
-              <Input type="number" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="0" className="border-2 border-black" />
+              <NumericInput value={qty} onChange={setQty} placeholder="0" className="border-2 border-black" />
             </div>
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Precio entrada</Label>
-              <Input type="number" value={unitPrice} onChange={(e) => setUnitPrice(e.target.value)} placeholder="0.00" className="border-2 border-black" />
+              <NumericInput value={unitPrice} onChange={setUnitPrice} placeholder="0.00" className="border-2 border-black" />
             </div>
           </div>
           <div className="flex flex-col gap-1">

@@ -376,6 +376,56 @@ sequenceDiagram
 
 ---
 
+---
+
+## 13. Modelo de estados para ingresos y gastos
+
+### 13.1 Tabla de estados
+
+| Status | Aplica a | Descripción | Visible en Dashboard | Visible en /ingresos, /gastos |
+|--------|----------|-------------|----------------------|-------------------------------|
+| `ACTIVE` | ingreso, gasto | Registro vigente | ✓ | ✓ |
+| `PENDING` | gasto | Gasto de obligación no pagado | ✗ | ✓ |
+| `CANCELLED` | gasto | Gasto de obligación cancelada | ✗ | ✓ |
+| `HISTORICAL` | ingreso, gasto | Eliminado del Dashboard o reemplazado por nueva versión | ✗ | ✓ (con filtro) |
+| `ARCHIVED` | ingreso, gasto | Archivado manualmente por el usuario | ✗ | ✓ (con filtro) |
+
+### 13.2 Transiciones válidas
+
+```
+ACTIVE ──────────────────────────────────────────────┐
+  │ eliminado del Dashboard                          │ archivado manualmente
+  │ o nuevo período creado                           │
+  ▼                                                  ▼
+HISTORICAL ←──────────────────────────────────── ARCHIVED
+  │ restaurado por usuario                  │ restaurado por usuario
+  └─────────────────────────────────────────┘
+            ambos → ACTIVE
+
+ACTIVE → CANCELLED  (solo para gastos de obligaciones)
+ACTIVE → PENDING    (solo para gastos de obligaciones pendientes)
+```
+
+**Transiciones NO permitidas**:
+- `HISTORICAL → ARCHIVED` (no tiene sentido semántico)
+- `ARCHIVED → HISTORICAL`
+- Cualquier transición que involucre `CANCELLED` o `PENDING` fuera del dominio de obligaciones
+
+### 13.3 Impacto en el Libro Contable
+
+Los JournalEntries NO se eliminan cuando un registro cambia de `ACTIVE` a `HISTORICAL` o `ARCHIVED`. Los asientos representan transacciones financieras reales que ya ocurrieron. La cuenta `efectivo` y las cuentas relacionadas mantienen su saldo correcto independientemente del estado del Record.
+
+### 13.4 Nuevo asiento para "Crear nuevo período"
+
+| Operación | Función | DEBIT | CREDIT | sourceEntityId | targetEntityId |
+|-----------|---------|-------|--------|----------------|----------------|
+| Nuevo período de ingreso | `editOrVersionRecord(mode="new-period")` | efectivo | ingresos | — | nuevoIngresoRecord.id |
+| Nuevo período de gasto | `editOrVersionRecord(mode="new-period")` | gastos | efectivo | nuevoGastoRecord.id | — |
+
+El registro anterior (HISTORICAL) conserva sus JournalEntries originales. No se crean asientos de reversión.
+
+---
+
 ## Glosario de términos contables usados en este sistema
 
 | Término | Definición en este contexto |

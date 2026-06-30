@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -240,10 +241,9 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Monto *</Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={setAmount}
                 placeholder="0.00"
                 className="border-2 border-black"
               />

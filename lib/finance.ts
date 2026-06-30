@@ -1,7 +1,7 @@
 export type RecordType = "activo" | "pasivo" | "ingreso" | "gasto"
 export type Currency = "USD" | "EUR" | "MXN" | "ARS" | "USDT"
 
-export type RecordStatus = "ACTIVE" | "PENDING" | "CANCELLED"
+export type RecordStatus = "ACTIVE" | "PENDING" | "CANCELLED" | "HISTORICAL" | "ARCHIVED"
 
 export interface FinancialRecord {
   id: string
@@ -14,6 +14,9 @@ export interface FinancialRecord {
   assetType?: string
   isGroupParent?: boolean
   status?: RecordStatus
+  createdAt?: string
+  effectiveDate?: string
+  previousVersionId?: string
 }
 
 export interface Snapshot {

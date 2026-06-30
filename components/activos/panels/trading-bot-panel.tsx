@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -129,19 +130,19 @@ export function TradingBotPanel({ asset }: TradingBotPanelProps) {
             <div className="grid grid-cols-2 gap-4 px-4 py-4">
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total invertido</Label>
-                <Input type="number" value={invested} onChange={(e) => setInvested(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={invested} onChange={setInvested} className="border-2 border-black" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total ganado</Label>
-                <Input type="number" value={gained} onChange={(e) => setGained(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={gained} onChange={setGained} className="border-2 border-black" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total perdido</Label>
-                <Input type="number" value={lost} onChange={(e) => setLost(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={lost} onChange={setLost} className="border-2 border-black" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total extraído</Label>
-                <Input type="number" value={extracted} onChange={(e) => setExtracted(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={extracted} onChange={setExtracted} className="border-2 border-black" />
               </div>
             </div>
             <DialogFooter className="border-t-2 border-black px-4 py-3">

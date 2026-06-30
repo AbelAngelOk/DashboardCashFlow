@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Plus, Check, RefreshCw } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -97,20 +98,18 @@ function AddDividendDialog({ asset, board, onClose }: AddDividendDialogProps) {
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Porcentaje (%)</Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={percentage}
-                onChange={(e) => setPercentage(e.target.value)}
+                onChange={setPercentage}
                 placeholder="0.00"
                 className="border-2 border-black"
               />
             </div>
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Ganancia estimada</Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={estimatedGain}
-                onChange={(e) => setEstimatedGain(e.target.value)}
+                onChange={setEstimatedGain}
                 placeholder="0.00"
                 className="border-2 border-black"
               />
@@ -203,10 +202,9 @@ function CollectDividendDialog({ asset, board, dividendId, onClose }: CollectDia
           <Label className="text-xs font-bold uppercase">
             Ganancia obtenida ({asset.currency})
           </Label>
-          <Input
-            type="number"
+          <NumericInput
             value={actualGain}
-            onChange={(e) => setActualGain(e.target.value)}
+            onChange={setActualGain}
             placeholder="0.00"
             className="mt-1 border-2 border-black"
             autoFocus

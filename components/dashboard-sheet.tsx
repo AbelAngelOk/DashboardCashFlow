@@ -1,10 +1,14 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
+import { MarkerPicker } from "@/components/markers/marker-picker"
+import { loadEntityMarkersForIds } from "@/lib/marker-actions"
+import type { MarkerDefinition } from "@/lib/marker-types"
 import {
   Select,
   SelectContent,
@@ -228,6 +232,19 @@ function SectionTable({
   const [editCreateGasto, setEditCreateGasto] = useState(false)
   const [editCreateIngreso, setEditCreateIngreso] = useState(false)
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
+  const [markerMap, setMarkerMap] = useState<Record<string, MarkerDefinition>>({})
+
+  const refreshMarkers = useCallback(async (ids: string[]) => {
+    if (ids.length === 0) return
+    try {
+      const map = await loadEntityMarkersForIds(ids, "RECORD")
+      setMarkerMap(map)
+    } catch { /* non-critical */ }
+  }, [])
+
+  useEffect(() => {
+    if (!readOnly) refreshMarkers(records.map((r) => r.id))
+  }, [records, readOnly, refreshMarkers])
 
   const linkOptions = linkType
     ? allRecords.filter((r) => r.type === linkType)
@@ -400,12 +417,13 @@ function SectionTable({
             {linkLabel}
           </div>
         )}
-        {!readOnly && <div className="w-16 px-1 py-1 text-center">Acción</div>}
+        {!readOnly && <div className="w-20 px-1 py-1 text-center">Acción</div>}
       </div>
 
       {/* Existing records */}
-      {displayRecords.map((record) =>
-        editingId === record.id && editDraft ? (
+      {displayRecords.map((record) => {
+        const marker = markerMap[record.id] ?? null
+        return editingId === record.id && editDraft ? (
           <div key={record.id} className="flex flex-col border-b border-black text-sm">
             <div className="flex">
               <div className="flex-1 border-r border-black px-1 py-0.5">
@@ -419,12 +437,9 @@ function SectionTable({
                 />
               </div>
               <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
-                <Input
-                  type="number"
+                <NumericInput
                   value={editDraft.amount}
-                  onChange={(e) =>
-                    setEditDraft({ ...editDraft, amount: e.target.value })
-                  }
+                  onChange={(v) => setEditDraft({ ...editDraft, amount: v })}
                   className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
                 />
                 <CurrencySelect
@@ -454,7 +469,7 @@ function SectionTable({
                   </Select>
                 </div>
               )}
-              <div className="flex w-16 items-center justify-center gap-1 px-1">
+              <div className="flex w-20 items-center justify-center gap-1 px-1">
                 <button
                   onClick={() => saveEdit(record)}
                   className="text-emerald-700 hover:text-emerald-900"
@@ -480,6 +495,10 @@ function SectionTable({
             {/* Main row */}
             <div
               className={`group flex border-b border-black text-sm ${record.isGroupParent ? "bg-gray-50" : ""}`}
+              style={marker ? {
+                borderLeft: `4px solid ${marker.color}`,
+                backgroundColor: `${marker.color}18`,
+              } : undefined}
             >
               <div className="flex-1 border-r border-black px-2 py-1">
                 <div className="flex items-center gap-1">
@@ -517,35 +536,43 @@ function SectionTable({
                 </div>
               )}
               {!readOnly && (
-                <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-                  {isActivo && (
-                    <Link
-                      href={`/activos/${record.id}`}
-                      className="text-gray-500 hover:text-black"
-                      aria-label="Ver activo"
-                    >
-                      <Eye className="h-3.5 w-3.5" />
-                    </Link>
-                  )}
-                  {/* Groups: no edit/delete from dashboard */}
-                  {!record.isGroupParent && (
-                    <>
-                      <button
-                        onClick={() => startEdit(record)}
+                <div className="flex w-20 items-center justify-center gap-1 px-1">
+                  <MarkerPicker
+                    entityId={record.id}
+                    entityType="RECORD"
+                    currentMarker={marker}
+                    onChanged={() => refreshMarkers(records.map((r) => r.id))}
+                  />
+                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {isActivo && (
+                      <Link
+                        href={`/activos/${record.id}`}
                         className="text-gray-500 hover:text-black"
-                        aria-label="Editar"
+                        aria-label="Ver activo"
                       >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleDeleteClick(record)}
-                        className="text-gray-500 hover:text-rose-700"
-                        aria-label="Eliminar"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </>
-                  )}
+                        <Eye className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
+                    {/* Groups: no edit/delete from dashboard */}
+                    {!record.isGroupParent && (
+                      <>
+                        <button
+                          onClick={() => startEdit(record)}
+                          className="text-gray-500 hover:text-black"
+                          aria-label="Editar"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(record)}
+                          className="text-gray-500 hover:text-rose-700"
+                          aria-label="Eliminar"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -562,37 +589,45 @@ function SectionTable({
                   </div>
                   {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
                   {!readOnly && (
-                    <div className="flex w-16 items-center justify-center gap-1 px-1 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Link
-                        href={`/activos/${child.id}`}
-                        className="text-gray-500 hover:text-black"
-                        aria-label="Ver activo"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Link>
-                      <button
-                        onClick={() => startEdit(child)}
-                        className="text-gray-500 hover:text-black"
-                        aria-label="Editar"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      {onDeleteWithComment && child.amount !== 0 && (
-                        <button
-                          onClick={() => { setPendingDelete(child); setDeleteComment(""); setDeleteCreateIngreso(false) }}
-                          className="text-gray-500 hover:text-rose-700"
-                          aria-label="Poner en cero"
+                    <div className="flex w-20 items-center justify-center gap-1 px-1">
+                      <MarkerPicker
+                        entityId={child.id}
+                        entityType="RECORD"
+                        currentMarker={markerMap[child.id] ?? null}
+                        onChanged={() => refreshMarkers(records.map((r) => r.id))}
+                      />
+                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <Link
+                          href={`/activos/${child.id}`}
+                          className="text-gray-500 hover:text-black"
+                          aria-label="Ver activo"
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          <Eye className="h-3.5 w-3.5" />
+                        </Link>
+                        <button
+                          onClick={() => startEdit(child)}
+                          className="text-gray-500 hover:text-black"
+                          aria-label="Editar"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
-                      )}
+                        {onDeleteWithComment && child.amount !== 0 && (
+                          <button
+                            onClick={() => { setPendingDelete(child); setDeleteComment(""); setDeleteCreateIngreso(false) }}
+                            className="text-gray-500 hover:text-rose-700"
+                            aria-label="Poner en cero"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
               ))}
           </div>
-        ),
-      )}
+        )
+      })}
 
       {/* Extra rows (e.g. obligations merged into pasivos) */}
       {extraRows?.map((row) => (
@@ -612,7 +647,7 @@ function SectionTable({
           </div>
           {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
           {!readOnly && (
-            <div className="flex w-16 items-center justify-center px-1">
+            <div className="flex w-20 items-center justify-center px-1">
               <Link href={row.href} className="text-gray-400 hover:text-black" aria-label="Ver obligación">
                 <ExternalLink className="h-3.5 w-3.5" />
               </Link>
@@ -636,11 +671,10 @@ function SectionTable({
               />
             </div>
             <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
-              <Input
-                type="number"
+              <NumericInput
                 placeholder="0.00"
                 value={row.amount}
-                onChange={(e) => updateNewRow(row.id, "amount", e.target.value)}
+                onChange={(v) => updateNewRow(row.id, "amount", v)}
                 onKeyDown={(e) => e.key === "Enter" && saveNewRow(row)}
                 className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0"
               />
@@ -669,7 +703,7 @@ function SectionTable({
                 </Select>
               </div>
             )}
-            <div className="flex w-16 items-center justify-center gap-1 px-1">
+            <div className="flex w-20 items-center justify-center gap-1 px-1">
               <button
                 onClick={() => saveNewRow(row)}
                 className="text-emerald-700 hover:text-emerald-900"

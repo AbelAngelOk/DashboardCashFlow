@@ -4,6 +4,7 @@ import { useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Dialog,
@@ -109,11 +110,11 @@ export function TradingPanel({ asset }: TradingPanelProps) {
             <div className="flex flex-col gap-4 px-4 py-4">
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total invertido ({c})</Label>
-                <Input type="number" value={invested} onChange={(e) => setInvested(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={invested} onChange={setInvested} className="border-2 border-black" />
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Total obtenido ({c})</Label>
-                <Input type="number" value={obtained} onChange={(e) => setObtained(e.target.value)} className="border-2 border-black" />
+                <NumericInput value={obtained} onChange={setObtained} className="border-2 border-black" />
               </div>
             </div>
             <DialogFooter className="border-t-2 border-black px-4 py-3">

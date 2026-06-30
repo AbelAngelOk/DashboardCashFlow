@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { NumericInput } from "@/components/ui/numeric-input"
 import { Label } from "@/components/ui/label"
 import {
   Select,
@@ -219,10 +220,9 @@ export function AssetFormDialog({
           <div className="flex gap-3">
             <div className="flex flex-1 flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Valor inicial</Label>
-              <Input
-                type="number"
+              <NumericInput
                 value={amount}
-                onChange={(e) => setAmount(e.target.value)}
+                onChange={setAmount}
                 placeholder="0.00"
                 className="border-2 border-black"
               />
@@ -250,20 +250,18 @@ export function AssetFormDialog({
               <div className="flex gap-3">
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Cantidad inicial</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     value={qty}
-                    onChange={(e) => handleQtyChange(e.target.value)}
+                    onChange={handleQtyChange}
                     placeholder="0"
                     className={`border-2 ${calcMismatch ? "border-amber-500" : "border-black"}`}
                   />
                 </div>
                 <div className="flex flex-1 flex-col gap-1">
                   <Label className="text-xs font-bold uppercase">Precio promedio</Label>
-                  <Input
-                    type="number"
+                  <NumericInput
                     value={avgPrice}
-                    onChange={(e) => handlePriceChange(e.target.value)}
+                    onChange={handlePriceChange}
                     placeholder="0.00"
                     className={`border-2 ${calcMismatch ? "border-amber-500" : "border-black"}`}
                   />
@@ -302,10 +300,9 @@ export function AssetFormDialog({
               </div>
               <div className="flex flex-col gap-1">
                 <Label className="text-xs font-bold uppercase">Tasa anual (%)</Label>
-                <Input
-                  type="number"
+                <NumericInput
                   value={ftRate}
-                  onChange={(e) => setFtRate(e.target.value)}
+                  onChange={setFtRate}
                   placeholder="0.00"
                   className="border-2 border-black"
                 />
