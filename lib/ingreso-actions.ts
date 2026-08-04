@@ -118,6 +118,43 @@ export async function loadIngresos(statuses: string[] = ["ACTIVE"]): Promise<Ing
   })
 }
 
+export async function loadIngreso(id: string): Promise<IngresoWithSource | null> {
+  const userId = await getUserId()
+  const i = await prisma.record.findFirst({ where: { id, userId, type: "ingreso" } })
+  if (!i) return null
+
+  let source: IngresoSource = { type: "free" }
+  if (i.linkedTo) {
+    const asset = await prisma.record.findFirst({
+      where: { id: i.linkedTo, userId, type: "activo" },
+      select: { id: true, name: true },
+    })
+    if (asset) {
+      source = { type: "asset", assetId: asset.id, assetName: asset.name, sourceType: guessSourceType(i.name) }
+    }
+  }
+
+  const nextVersion = await prisma.record.findFirst({
+    where: { previousVersionId: id, userId },
+    select: { id: true },
+  })
+
+  const amount = typeof i.amount === "number" ? i.amount : (i.amount as { toNumber: () => number }).toNumber()
+
+  return {
+    id: i.id,
+    name: i.name,
+    amount,
+    currency: i.currency as Currency,
+    status: i.status,
+    operationDate: i.operationDate?.toISOString(),
+    createdAt: i.createdAt?.toISOString(),
+    previousVersionId: i.previousVersionId ?? undefined,
+    nextVersionId: nextVersion?.id,
+    source,
+  }
+}
+
 // ── Status mutations ──────────────────────────────────────────────────────────
 
 export async function archiveIngreso(id: string): Promise<void> {

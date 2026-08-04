@@ -2,6 +2,36 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Documentation Policy (mandatory, automatic)
+
+**Every functional, architectural, or visual change MUST be documented. No exceptions.**
+
+### Mandatory workflow (6 phases)
+1. Analyze scope
+2. Identify affected docs in `/docs`
+3. Update/create docs **BEFORE** implementing
+4. Implement
+5. Update docs if implementation diverged from plan
+6. Bump version in all affected docs
+
+### Semantic versioning header — required on every doc
+```
+---
+Versión: X.Y.Z
+Última actualización: YYYY-MM-DD
+Autor: Abel Cejas
+Estado: Activo
+---
+```
+
+### Required files
+- `/docs/CHANGELOG.md` — complete change history (Added/Modified/Fixed/Removed)
+- `/docs/releases/vX.Y.Z.md` — per-version release notes
+- `/docs/modules/*.md` — per-module functional docs with Mermaid diagrams
+
+### End-of-implementation report
+After every task, report: docs created/modified with versions, code components changed, new/modified/removed functionality, architectural decisions and risks.
+
 ## Commands
 
 ```bash

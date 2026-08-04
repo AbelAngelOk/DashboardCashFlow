@@ -1,3 +1,10 @@
+---
+Versión: 2.0.0
+Última actualización: 2026-06-30
+Autor: Abel Cejas
+Estado: Activo
+---
+
 # 03 — Modelo de Datos
 
 ## Fuente

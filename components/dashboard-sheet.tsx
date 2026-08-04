@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
+import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
@@ -28,6 +28,7 @@ import {
   defaultCurrency,
   formatAmount,
 } from "@/lib/finance"
+import type { FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import { GroupValueDisplay } from "@/components/group-value-display"
 import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { useSettings } from "@/components/settings-store"
@@ -123,6 +124,8 @@ export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT" | "EXTRACT"
 interface DashboardSheetProps {
   records: FinancialRecord[]
   readOnly?: boolean
+  gastoGroups?: FlowGroupWithMembers[]
+  ingresoGroups?: FlowGroupWithMembers[]
   onCreate?: (record: FinancialRecord) => void
   onEdit?: (record: FinancialRecord, previous: FinancialRecord) => void
   onDelete?: (record: FinancialRecord) => void
@@ -178,6 +181,8 @@ interface SectionTableProps {
   /** Override the records used for the totals footer (e.g. expanded children instead of stale group parent). */
   totalRecords?: FinancialRecord[]
   extraRows?: ExtraRow[]
+  /** User-defined groups for gasto/ingreso types. When provided, records are rendered in groups. */
+  flowGroups?: FlowGroupWithMembers[]
   /** Override the + button behavior. When provided, clicking + calls this instead of addNewRow. */
   onAddClick?: () => void
   onCreate?: (record: FinancialRecord) => void
@@ -207,6 +212,7 @@ function SectionTable({
   readOnly,
   totalRecords,
   extraRows,
+  flowGroups,
   onAddClick,
   onCreate,
   onEdit,
@@ -420,8 +426,93 @@ function SectionTable({
         {!readOnly && <div className="w-20 px-1 py-1 text-center">Acción</div>}
       </div>
 
-      {/* Existing records */}
-      {displayRecords.map((record) => {
+      {/* Flow groups (gasto / ingreso user-defined groups) */}
+      {flowGroups && flowGroups.length > 0 && (type === "gasto" || type === "ingreso") &&
+        flowGroups.map((group) => {
+          const members = displayRecords.filter((r) => group.memberIds.includes(r.id))
+          if (members.length === 0) return null
+          const isExpanded = expandedGroupIds.has(group.id)
+          const totalByCurrency = members.reduce<Record<string, number>>((acc, r) => {
+            acc[r.currency] = (acc[r.currency] ?? 0) + r.amount
+            return acc
+          }, {})
+          return (
+            <div key={group.id}>
+              <div className="flex border-b border-black bg-gray-50 text-sm font-semibold">
+                <div className="flex-1 border-r border-black px-2 py-1">
+                  <div className="flex items-center gap-1">
+                    <button onClick={() => toggleGroup(group.id)} className="shrink-0 text-gray-400 hover:text-black" aria-label={isExpanded ? "Colapsar" : "Expandir"}>
+                      {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                    </button>
+                    <span>{group.name}</span>
+                    <span className="rounded-full bg-gray-200 px-1.5 text-[10px] font-normal text-gray-600">{members.length}</span>
+                  </div>
+                </div>
+                <div className="w-36 border-r border-black px-2 py-1 text-right">
+                  {Object.entries(totalByCurrency).map(([c, amt]) => (
+                    <div key={c} className="text-xs">{formatAmount(amt, c as Currency)} {c}</div>
+                  ))}
+                </div>
+                {hasLink && <div className="hidden w-24 border-r border-black sm:block" />}
+                {!readOnly && <div className="w-20" />}
+              </div>
+              {isExpanded && members.map((member) => {
+                const marker = markerMap[member.id] ?? null
+                return editingId === member.id && editDraft ? (
+                  <div key={member.id} className="flex flex-col border-b border-black text-sm">
+                    <div className="flex">
+                      <div className="flex-1 border-r border-black px-1 py-0.5">
+                        <Input value={editDraft.name} onChange={(e) => { setEditDraft({ ...editDraft, name: e.target.value }); setNameError(null) }}
+                          className="h-6 border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0" />
+                      </div>
+                      <div className="flex w-36 items-center gap-1 border-r border-black px-1 py-0.5">
+                        <NumericInput value={editDraft.amount} onChange={(v) => setEditDraft({ ...editDraft, amount: v })}
+                          className="h-6 w-16 border-0 bg-transparent p-0 text-right text-sm shadow-none focus-visible:ring-0" />
+                        <CurrencySelect value={editDraft.currency} onChange={(v) => setEditDraft({ ...editDraft, currency: v })} />
+                      </div>
+                      {hasLink && <div className="hidden w-24 px-1 py-0.5 sm:block" />}
+                      <div className="flex w-20 items-center justify-center gap-1 px-1">
+                        <button onClick={() => saveEdit(member)} className="text-emerald-700 hover:text-emerald-900" aria-label="Guardar"><Check className="h-4 w-4" /></button>
+                        <button onClick={cancelEdit} className="text-gray-500 hover:text-black" aria-label="Cancelar"><X className="h-4 w-4" /></button>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div key={member.id}
+                    className="group flex border-b border-black bg-gray-50/50 text-sm"
+                    style={marker ? { borderLeft: `4px solid ${marker.color}`, backgroundColor: `${marker.color}18` } : undefined}
+                  >
+                    <div className="flex-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">{member.name}</div>
+                    <div className="w-36 border-r border-black px-2 py-1 text-right text-gray-600"><RecordAmount record={member} /></div>
+                    {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
+                    {!readOnly && (
+                      <div className="flex w-20 items-center justify-center gap-1 px-1">
+                        <MarkerPicker entityId={member.id} entityType="RECORD" currentMarker={marker} onChanged={() => refreshMarkers(records.map((r) => r.id))} />
+                        <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                          {type === "ingreso" && (
+                            <Link href={`/ingresos/${member.id}`} className="text-gray-500 hover:text-black" aria-label="Ver ingreso"><Eye className="h-3.5 w-3.5" /></Link>
+                          )}
+                          {type === "gasto" && (
+                            <Link href={`/gastos/${member.id}`} className="text-gray-500 hover:text-black" aria-label="Ver gasto"><Eye className="h-3.5 w-3.5" /></Link>
+                          )}
+                          <button onClick={() => startEdit(member)} className="text-gray-500 hover:text-black" aria-label="Editar"><Pencil className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDeleteClick(member)} className="text-gray-500 hover:text-rose-700" aria-label="Eliminar"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })
+      }
+
+      {/* Existing records (ungrouped when flowGroups active) */}
+      {(flowGroups && flowGroups.length > 0 && (type === "gasto" || type === "ingreso")
+        ? displayRecords.filter((r) => !flowGroups.some((g) => g.memberIds.includes(r.id)))
+        : displayRecords
+      ).map((record) => {
         const marker = markerMap[record.id] ?? null
         return editingId === record.id && editDraft ? (
           <div key={record.id} className="flex flex-col border-b border-black text-sm">
@@ -553,6 +644,24 @@ function SectionTable({
                         <Eye className="h-3.5 w-3.5" />
                       </Link>
                     )}
+                    {type === "ingreso" && (
+                      <Link
+                        href={`/ingresos/${record.id}`}
+                        className="text-gray-500 hover:text-black"
+                        aria-label="Ver ingreso"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
+                    {type === "gasto" && (
+                      <Link
+                        href={`/gastos/${record.id}`}
+                        className="text-gray-500 hover:text-black"
+                        aria-label="Ver gasto"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                      </Link>
+                    )}
                     {/* Groups: no edit/delete from dashboard */}
                     {!record.isGroupParent && (
                       <>
@@ -647,9 +756,9 @@ function SectionTable({
           </div>
           {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
           {!readOnly && (
-            <div className="flex w-20 items-center justify-center px-1">
+            <div className="flex w-20 items-center justify-center px-1 opacity-0 transition-opacity group-hover:opacity-100">
               <Link href={row.href} className="text-gray-400 hover:text-black" aria-label="Ver obligación">
-                <ExternalLink className="h-3.5 w-3.5" />
+                <Eye className="h-3.5 w-3.5" />
               </Link>
             </div>
           )}
@@ -894,6 +1003,8 @@ function SectionTable({
 export function DashboardSheet({
   records,
   readOnly = false,
+  gastoGroups,
+  ingresoGroups,
   onCreate,
   onEdit,
   onDelete,
@@ -1002,6 +1113,7 @@ export function DashboardSheet({
               linkType="activo"
               linkLabel="Activo"
               readOnly={readOnly}
+              flowGroups={ingresoGroups}
               onCreate={onCreate}
               onEdit={onEdit}
               onDelete={onDelete}
@@ -1013,6 +1125,7 @@ export function DashboardSheet({
               allRecords={records}
               valueLabel="Monto"
               readOnly={readOnly}
+              flowGroups={gastoGroups}
               onCreate={onCreate}
               onEdit={onEdit}
               onDelete={onDelete}

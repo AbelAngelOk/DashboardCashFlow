@@ -1,4 +1,13 @@
+---
+Versión: 2.1.0
+Última actualización: 2026-08-04
+Autor: Abel Cejas
+Estado: Activo
+---
+
 # 00 — Resumen Ejecutivo
+
+> Este documento es la **entrada corta**. Para el detalle completo de funcionalidades, entidades de dominio y cómo se relacionan entre sí, ver [10-Producto.md](10-Producto.md).
 
 ## ¿Qué hace el sistema?
 

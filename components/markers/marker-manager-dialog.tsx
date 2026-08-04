@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { TailwindColorPicker, TAILWIND_COLORS } from "@/components/ui/tailwind-color-picker"
 import {
   createMarker,
   updateMarker,
@@ -26,7 +27,7 @@ interface Props {
 export function MarkerManagerDialog({ open, onOpenChange }: Props) {
   const { markers, reload } = useMarkers()
   const [newName, setNewName] = useState("")
-  const [newColor, setNewColor] = useState("#EF4444")
+  const [newColor, setNewColor] = useState(TAILWIND_COLORS[5].value) // Red
   const [saving, setSaving] = useState(false)
 
   const handleCreate = async () => {
@@ -35,7 +36,7 @@ export function MarkerManagerDialog({ open, onOpenChange }: Props) {
     try {
       await createMarker({ name: newName.trim(), color: newColor, order: markers.length })
       setNewName("")
-      setNewColor("#EF4444")
+      setNewColor(TAILWIND_COLORS[5].value)
       await reload()
     } finally {
       setSaving(false)
@@ -116,20 +117,22 @@ export function MarkerManagerDialog({ open, onOpenChange }: Props) {
                 className="flex-1 border-2 border-black"
                 onKeyDown={(e) => e.key === "Enter" && handleCreate()}
               />
-              <input
-                type="color"
-                value={newColor}
-                onChange={(e) => setNewColor(e.target.value)}
-                className="h-9 w-10 cursor-pointer rounded border-2 border-black bg-white p-0.5"
+              <div
+                className="h-9 w-9 shrink-0 rounded-full border-2 border-black"
+                style={{ backgroundColor: newColor }}
               />
-              <Button
-                onClick={handleCreate}
-                disabled={saving || !newName.trim()}
-                className="gap-1 bg-black text-white hover:bg-gray-800"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
             </div>
+            <div className="mt-2">
+              <TailwindColorPicker value={newColor} onChange={setNewColor} />
+            </div>
+            <Button
+              onClick={handleCreate}
+              disabled={saving || !newName.trim()}
+              className="mt-3 w-full gap-1 bg-black text-white hover:bg-gray-800"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Crear marcador
+            </Button>
           </div>
         </div>
       </DialogContent>

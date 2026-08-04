@@ -226,7 +226,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* ── Tipos de Activo section ───────────────────────────────── */}
-      <div className="border-2 border-black">
+      <div className="mt-8 border-2 border-black">
         <div className="border-b-2 border-black bg-black px-4 py-2">
           <span className="text-sm font-bold uppercase tracking-wide text-white">
             Tipos de Activo
@@ -314,7 +314,7 @@ export default function ConfiguracionPage() {
       </div>
 
       {/* Marcadores */}
-      <div className="border-2 border-black">
+      <div className="mt-8 border-2 border-black">
         <div className="border-b-2 border-black bg-black px-4 py-2">
           <h2 className="font-bold italic text-white">Marcadores Visuales</h2>
         </div>

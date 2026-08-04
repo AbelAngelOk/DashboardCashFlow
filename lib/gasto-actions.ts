@@ -141,6 +141,54 @@ export async function loadGastos(statuses: string[] = ["ACTIVE"]): Promise<Gasto
   })
 }
 
+export async function loadGasto(id: string): Promise<GastoWithSource | null> {
+  const userId = await getUserId()
+  const g = await prisma.record.findFirst({ where: { id, userId, type: "gasto" } })
+  if (!g) return null
+
+  const [payments, installments] = await Promise.all([
+    prisma.obligationPayment.findMany({
+      where: { gastoRecordId: id },
+      include: { obligation: { select: { id: true, name: true } } },
+    }),
+    prisma.obligationInstallment.findMany({
+      where: { gastoRecordId: id },
+      include: { obligation: { select: { id: true, name: true } } },
+    }),
+  ])
+
+  let source: GastoSource = { type: "free" }
+  if (payments.length > 0) {
+    source = { type: "obligation", obligationId: payments[0].obligationId, obligationName: payments[0].obligation.name }
+  } else if (installments.length > 0) {
+    source = { type: "obligation", obligationId: installments[0].obligationId, obligationName: installments[0].obligation.name }
+  } else if (g.linkedTo) {
+    const asset = await prisma.record.findFirst({
+      where: { id: g.linkedTo, userId, type: "activo", deletedAt: null },
+      select: { id: true, name: true },
+    })
+    if (asset) source = { type: "asset", assetId: asset.id, assetName: asset.name }
+  }
+
+  const nextVersion = await prisma.record.findFirst({
+    where: { previousVersionId: id, userId },
+    select: { id: true },
+  })
+
+  return {
+    id: g.id,
+    name: g.name,
+    amount: typeof g.amount === "number" ? g.amount : (g.amount as { toNumber: () => number }).toNumber(),
+    currency: g.currency as Currency,
+    status: g.status,
+    operationDate: g.operationDate?.toISOString(),
+    createdAt: g.createdAt?.toISOString(),
+    previousVersionId: g.previousVersionId ?? undefined,
+    nextVersionId: nextVersion?.id,
+    source,
+  }
+}
+
 // ── Status mutations ──────────────────────────────────────────────────────────
 
 export async function archiveGasto(id: string): Promise<void> {

@@ -1,7 +1,14 @@
+---
+Versión: 2.0.0
+Última actualización: 2026-06-30
+Autor: Abel Cejas
+Estado: Activo
+---
+
 # Arquitectura del Dominio Financiero
 
 > **Fuente de verdad** del dominio financiero de DashboardCashFlow.
-> Última actualización: 2026-06-23
+> Última actualización: 2026-06-30
 
 ---
 

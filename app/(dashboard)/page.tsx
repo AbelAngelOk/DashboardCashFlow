@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Camera } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,7 @@ import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialo
 import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
 import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
+import { loadGastoGroups, loadIngresoGroups, type FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import type { FinancialRecord } from "@/lib/finance"
 import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
@@ -32,6 +33,14 @@ export default function DashboardPage() {
   const [breakdownRecord, setBreakdownRecord] = useState<FinancialRecord | null>(null)
   const [obligationFormOpen, setObligationFormOpen] = useState(false)
   const [assetFormOpen, setAssetFormOpen] = useState(false)
+  const [gastoGroups, setGastoGroups] = useState<FlowGroupWithMembers[]>([])
+  const [ingresoGroups, setIngresoGroups] = useState<FlowGroupWithMembers[]>([])
+
+  useEffect(() => {
+    Promise.all([loadGastoGroups(), loadIngresoGroups()])
+      .then(([g, i]) => { setGastoGroups(g); setIngresoGroups(i) })
+      .catch(console.error)
+  }, [])
 
   const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
     editRecord(record, previous)
@@ -150,6 +159,8 @@ export default function DashboardPage() {
 
       <DashboardSheet
         records={records}
+        gastoGroups={gastoGroups}
+        ingresoGroups={ingresoGroups}
         onCreate={createRecord}
         onEdit={editRecord}
         onDelete={deleteRecord}

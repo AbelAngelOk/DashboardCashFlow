@@ -1,9 +1,40 @@
 # Documentación — DashboardCashFlow
 
+> **Versión actual del proyecto: 2.1.0** — Ver [CHANGELOG.md](CHANGELOG.md) para historial completo.
+
+## Empezar por acá
+
+| Archivo | Contenido |
+|---|---|
+| [10-Producto.md](10-Producto.md) | **Vista de producto**: funcionalidades, entidades, cómo se relacionan, ciclos de vida y recorridos de usuario |
+| [00-Resumen-Ejecutivo.md](00-Resumen-Ejecutivo.md) | Síntesis breve del sistema |
+
+## Documentación por módulo
+
+| Archivo | Módulo |
+|---|---|
+| [modules/dashboard.md](modules/dashboard.md) | Dashboard — Estado de Resultados + Balance |
+| [modules/activos.md](modules/activos.md) | Activos — Portafolio de inversiones |
+| [modules/gastos.md](modules/gastos.md) | Gastos — Registros de gastos con agrupación y versionado |
+| [modules/ingresos.md](modules/ingresos.md) | Ingresos — Registros de ingresos con agrupación y versionado |
+| [modules/obligaciones.md](modules/obligaciones.md) | Obligaciones — Deudas y compromisos periódicos |
+| [modules/libro-contable.md](modules/libro-contable.md) | Libro Contable — Doble entrada |
+| [modules/snapshots.md](modules/snapshots.md) | Snapshots — Capturas periódicas del estado |
+| [modules/historial.md](modules/historial.md) | Historial — Log de auditoría paginado |
+| [modules/configuracion.md](modules/configuracion.md) | Configuración — Monedas, tipos, marcadores |
+
+## Releases
+
+| Versión | Archivo |
+|---------|---------|
+| v2.1.0 | [releases/v2.1.0.md](releases/v2.1.0.md) |
+| v2.0.0 | [releases/v2.0.0.md](releases/v2.0.0.md) |
+
 ## Referencia técnica
 
 | Archivo | Contenido |
 |---|---|
+| [10-Producto.md](10-Producto.md) | Funcionalidades, entidades de dominio, relaciones, ciclos de vida, recorridos y límites |
 | [01-Arquitectura.md](01-Arquitectura.md) | Stack, layout de componentes, providers, rutas, Server Actions, flujo de datos |
 | [02-Reglas-de-Negocio.md](02-Reglas-de-Negocio.md) | Reglas de negocio de activos, snapshots, obligaciones |
 | [03-Modelo-de-Datos.md](03-Modelo-de-Datos.md) | Todas las tablas de la DB con campos, índices, relaciones |

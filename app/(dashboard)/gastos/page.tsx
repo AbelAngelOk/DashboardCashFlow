@@ -1,15 +1,25 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useTransition } from "react"
 import Link from "next/link"
-import { ChevronDown, ChevronRight, ExternalLink, Pencil, Plus, ShoppingCart } from "lucide-react"
+import { Check, ChevronDown, ChevronRight, ExternalLink, Network, Pencil, Plus, ShoppingCart, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import {
   loadGastos,
   archiveGasto,
   restoreGasto,
   type GastoWithSource,
 } from "@/lib/gasto-actions"
+import {
+  loadGastoGroups,
+  createFlowGroup,
+  renameFlowGroup,
+  deleteFlowGroup,
+  assignToFlowGroup,
+  removeFromFlowGroup,
+  type FlowGroupWithMembers,
+} from "@/lib/flow-group-actions"
 import { loadEntityMarkersForIds } from "@/lib/marker-actions"
 import { GastoFormDialog } from "@/components/gastos/gasto-form-dialog"
 import { EditOrVersionDialog } from "@/components/shared/edit-or-version-dialog"
@@ -17,6 +27,13 @@ import { GastoIngresoLinksPanel } from "@/components/gastos/gasto-ingreso-links-
 import { MarkerPicker } from "@/components/markers/marker-picker"
 import { formatAmount, type Currency } from "@/lib/finance"
 import type { MarkerDefinition } from "@/lib/marker-types"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 type StatusFilter = "ACTIVE" | "HISTORICAL" | "ARCHIVED"
 
@@ -81,15 +98,33 @@ function formatDate(iso?: string) {
 
 export default function GastosPage() {
   const [gastos, setGastos] = useState<GastoWithSource[]>([])
+  const [groups, setGroups] = useState<FlowGroupWithMembers[]>([])
   const [loading, setLoading] = useState(true)
   const [formOpen, setFormOpen] = useState(false)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ACTIVE")
   const [editingGasto, setEditingGasto] = useState<GastoWithSource | null>(null)
   const [expandedLinks, setExpandedLinks] = useState<Set<string>>(new Set())
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [markerMap, setMarkerMap] = useState<Record<string, MarkerDefinition>>({})
+  // Grouping mode
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [groupTarget, setGroupTarget] = useState<string>("new")
+  const [groupName, setGroupName] = useState("")
+  const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null)
+  const [renamingName, setRenamingName] = useState("")
+  const [, startTransition] = useTransition()
 
   const toggleLinks = (id: string) =>
     setExpandedLinks((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const toggleGroup = (id: string) =>
+    setExpandedGroups((prev) => {
       const next = new Set(prev)
       if (next.has(id)) next.delete(id)
       else next.add(id)
@@ -104,10 +139,18 @@ export default function GastosPage() {
     } catch { /* non-critical */ }
   }, [])
 
+  const fetchGroups = useCallback(async () => {
+    try {
+      setGroups(await loadGastoGroups())
+    } catch (err) {
+      console.error(err)
+    }
+  }, [])
+
   const fetchGastos = useCallback(async (status: StatusFilter) => {
     setLoading(true)
     try {
-      const data = await loadGastos([status])
+      const [data] = await Promise.all([loadGastos([status]), fetchGroups()])
       setGastos(data)
       refreshMarkers(data.map((g) => g.id))
     } catch (err) {
@@ -115,11 +158,67 @@ export default function GastosPage() {
     } finally {
       setLoading(false)
     }
-  }, [refreshMarkers])
+  }, [refreshMarkers, fetchGroups])
 
   useEffect(() => {
     fetchGastos(statusFilter)
   }, [fetchGastos, statusFilter])
+
+  const exitSelectMode = () => {
+    setSelectMode(false)
+    setSelectedIds(new Set())
+    setGroupTarget("new")
+    setGroupName("")
+  }
+
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+
+  const handleGroupAction = () => {
+    const ids = [...selectedIds]
+    if (groupTarget === "new") {
+      if (!groupName.trim()) return
+      startTransition(async () => {
+        await createFlowGroup(groupName.trim(), "EXPENSE", ids)
+        await fetchGroups()
+        exitSelectMode()
+      })
+    } else {
+      startTransition(async () => {
+        await Promise.all(ids.map((id) => assignToFlowGroup(groupTarget, id)))
+        await fetchGroups()
+        exitSelectMode()
+      })
+    }
+  }
+
+  const handleRemoveFromGroup = (groupId: string, recordId: string) => {
+    startTransition(async () => {
+      await removeFromFlowGroup(groupId, recordId)
+      await fetchGroups()
+    })
+  }
+
+  const handleDeleteGroup = (id: string) => {
+    startTransition(async () => {
+      await deleteFlowGroup(id)
+      await fetchGroups()
+    })
+  }
+
+  const handleRenameGroup = (id: string) => {
+    if (!renamingName.trim()) return
+    startTransition(async () => {
+      await renameFlowGroup(id, renamingName.trim())
+      await fetchGroups()
+      setRenamingGroupId(null)
+    })
+  }
 
   const handleArchive = async (id: string) => {
     await archiveGasto(id)
@@ -153,14 +252,25 @@ export default function GastosPage() {
         <div className="inline-block bg-black px-4 py-1 text-white">
           <span className="font-bold">Gastos</span>
         </div>
-        <Button
-          size="sm"
-          className="gap-2 bg-black text-white hover:bg-gray-800"
-          onClick={() => setFormOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          Nuevo Gasto
-        </Button>
+        <div className="flex items-center gap-2">
+          {selectMode ? (
+            <Button size="sm" variant="outline" className="gap-1.5 border-2 border-black text-xs" onClick={exitSelectMode}>
+              <X className="h-3.5 w-3.5" />
+              Cancelar
+            </Button>
+          ) : (
+            <>
+              <Button size="sm" variant="outline" className="gap-1.5 border-2 border-black text-xs" onClick={() => setSelectMode(true)}>
+                <Network className="h-3.5 w-3.5" />
+                Agrupar
+              </Button>
+              <Button size="sm" className="gap-2 bg-black text-white hover:bg-gray-800" onClick={() => setFormOpen(true)}>
+                <Plus className="h-4 w-4" />
+                Nuevo Gasto
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Status filter */}
@@ -217,6 +327,107 @@ export default function GastosPage() {
             </div>
           </div>
 
+          {/* User-defined groups */}
+          {groups.length > 0 && (
+            <div className="flex flex-col gap-3">
+              {groups.map((group) => {
+                const members = gastos.filter((g) => group.memberIds.includes(g.id))
+                const isExpanded = expandedGroups.has(group.id)
+                const groupTotal = members.reduce<Record<string, number>>((acc, g) => {
+                  acc[g.currency] = (acc[g.currency] ?? 0) + g.amount
+                  return acc
+                }, {})
+                return (
+                  <div key={group.id} className="border-2 border-black">
+                    {/* Group header */}
+                    <div className="flex items-center border-b-2 border-black bg-black px-3 py-2">
+                      <button onClick={() => toggleGroup(group.id)} className="mr-2 shrink-0 text-gray-400 hover:text-white">
+                        {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                      </button>
+                      {renamingGroupId === group.id ? (
+                        <div className="flex flex-1 items-center gap-2">
+                          <Input
+                            autoFocus
+                            value={renamingName}
+                            onChange={(e) => setRenamingName(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") handleRenameGroup(group.id); if (e.key === "Escape") setRenamingGroupId(null) }}
+                            className="h-6 flex-1 border-0 bg-white/10 px-1 text-sm text-white focus-visible:ring-0"
+                          />
+                          <button onClick={() => handleRenameGroup(group.id)} className="text-emerald-400 hover:text-emerald-200"><Check className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => setRenamingGroupId(null)} className="text-gray-400 hover:text-white"><X className="h-3.5 w-3.5" /></button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="flex-1 font-bold italic text-white">{group.name}</span>
+                          <span className="mr-3 rounded-full bg-white/20 px-1.5 text-[10px] text-white">{members.length}</span>
+                          <div className="flex items-center gap-1">
+                            {Object.entries(groupTotal).map(([c, amt]) => (
+                              <span key={c} className="text-xs text-gray-300">{formatAmount(amt, c as Currency)} {c}</span>
+                            ))}
+                            <button onClick={() => { setRenamingGroupId(group.id); setRenamingName(group.name) }} className="ml-2 text-gray-400 hover:text-white" title="Renombrar"><Pencil className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => handleDeleteGroup(group.id)} className="text-gray-400 hover:text-rose-400" title="Eliminar grupo"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                    {/* Members */}
+                    {isExpanded && (
+                      <>
+                        <div className="flex border-b border-black bg-gray-100 text-xs font-bold">
+                          <div className="flex-1 px-3 py-1.5">Descripción</div>
+                          <div className="w-40 px-3 py-1.5 text-right">Monto</div>
+                          <div className="w-10 px-2 py-1.5" />
+                        </div>
+                        {members.map((g) => (
+                          <div key={g.id} className="flex items-center border-b border-black py-1.5 pl-8 pr-3 text-sm">
+                            <span className="flex-1 text-gray-600">{g.name}</span>
+                            <span className="w-40 text-right tabular-nums text-gray-600">{formatAmount(g.amount, g.currency)} {g.currency}</span>
+                            <button onClick={() => handleRemoveFromGroup(group.id, g.id)} className="ml-2 text-gray-400 hover:text-rose-700" title="Quitar del grupo"><X className="h-3.5 w-3.5" /></button>
+                          </div>
+                        ))}
+                        {members.length === 0 && (
+                          <div className="px-4 py-3 text-xs text-gray-400">Sin miembros — puedes eliminar este grupo.</div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Select-mode action bar */}
+          {selectMode && selectedIds.size > 0 && (
+            <div className="sticky bottom-4 z-10 flex items-center gap-3 rounded border-2 border-black bg-white p-3 shadow-lg">
+              <span className="text-sm font-semibold">{selectedIds.size} seleccionado{selectedIds.size !== 1 ? "s" : ""}</span>
+              <div className="flex flex-1 items-center gap-2">
+                <Select value={groupTarget} onValueChange={setGroupTarget}>
+                  <SelectTrigger className="h-8 flex-1 border-2 border-black text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">Crear nuevo grupo</SelectItem>
+                    {groups.map((g) => (
+                      <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {groupTarget === "new" && (
+                  <Input
+                    placeholder="Nombre del grupo..."
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleGroupAction()}
+                    className="h-8 flex-1 border-2 border-black text-xs"
+                  />
+                )}
+                <Button size="sm" className="bg-black text-white hover:bg-gray-800" onClick={handleGroupAction} disabled={groupTarget === "new" && !groupName.trim()}>
+                  {groupTarget === "new" ? "Crear" : "Asignar"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Grouped tables */}
           {[
             { label: "Desde Obligaciones", rows: obligationGastos },
@@ -247,6 +458,16 @@ export default function GastosPage() {
                         backgroundColor: `${marker.color}18`,
                       } : undefined}
                     >
+                      {selectMode ? (
+                        <label className="flex cursor-pointer items-center px-3 py-2">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(g.id)}
+                            onChange={() => toggleSelect(g.id)}
+                            className="h-3.5 w-3.5"
+                          />
+                        </label>
+                      ) : (
                       <button
                         onClick={() => toggleLinks(g.id)}
                         className="flex items-center px-2 py-2 text-gray-400 hover:text-black"
@@ -256,6 +477,7 @@ export default function GastosPage() {
                           ? <ChevronDown className="h-3.5 w-3.5" />
                           : <ChevronRight className="h-3.5 w-3.5" />}
                       </button>
+                      )}
                       <div className="flex flex-1 flex-col gap-0.5 py-2 pr-3">
                         <span className="font-medium">{g.name}</span>
                         <StatusBadge status={g.status} />

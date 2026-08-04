@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(awk '/^```mermaid/{n++; print \"--- diagrama \" n \" \\(linea \" NR \"\\) ---\"; inb=1; next} /^```$/{if\\(inb\\){inb=0}} inb{print}' docs/10-Producto.md)"
+    ]
+  }
+}
