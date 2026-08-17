@@ -7,6 +7,7 @@ import { formatAmount, type FinancialRecord } from "@/lib/finance"
 import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
 import { useSettings } from "@/components/settings-store"
+import { useAssetCategories } from "@/components/activos/asset-categories-store"
 import { GroupValueDisplay } from "@/components/group-value-display"
 import { MarkerPicker } from "@/components/markers/marker-picker"
 import { loadEntityMarkersForIds } from "@/lib/marker-actions"
@@ -120,7 +121,7 @@ export function AssetList({
   onToggleSelect,
 }: AssetListProps) {
   const { settings } = useSettings()
-  const { hiddenAssetTypes = [], customAssetTypes = [] } = settings
+  const { categories } = useAssetCategories()
 
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set())
   const [filterTypes, setFilterTypes] = useState<Set<string>>(new Set())
@@ -167,13 +168,8 @@ export function AssetList({
       ? topLevel
       : topLevel.filter((r) => r.assetType && filterTypes.has(r.assetType))
 
-  // Visible asset types: exclude GROUP and hidden system types; include custom types
-  const visibleTypes: [string, string][] = [
-    ...(Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).filter(
-      ([type]) => type !== "GROUP" && !hiddenAssetTypes.includes(type),
-    ),
-    ...customAssetTypes.map((ct): [string, string] => [ct.id, ct.name]),
-  ]
+  // Categorías disponibles para filtrar. Desde v2.5.0 salen de la DB, no del enum.
+  const visibleTypes: [string, string][] = categories.map((c) => [c.id, c.name])
 
   return (
     <div data-testid="activos-list">

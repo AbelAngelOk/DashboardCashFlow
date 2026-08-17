@@ -15,7 +15,8 @@ import {
 import { formatAmount } from "@/lib/finance"
 import { type Asset, type AssetType, ASSET_TYPE_LABELS } from "@/lib/assets"
 import { updateAsset } from "@/lib/assets-actions"
-import { useSettings } from "@/components/settings-store"
+import { useAssetCategories } from "@/components/activos/asset-categories-store"
+import { AssetTypeLabel } from "@/components/activos/asset-type-label"
 import { GroupValueDisplay } from "@/components/group-value-display"
 
 type EditableField = "name" | "ticker" | "assetType" | "description"
@@ -27,11 +28,7 @@ interface AssetInfoSectionProps {
 export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
   const router = useRouter()
   const [, startTransition] = useTransition()
-  const { settings } = useSettings()
-  const { hiddenAssetTypes = [], customAssetTypes = [] } = settings
-  const visibleSystemTypes = (Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).filter(
-    ([t]) => t !== "GROUP" && !hiddenAssetTypes.includes(t),
-  )
+  const { categories } = useAssetCategories()
   const [editingField, setEditingField] = useState<EditableField | null>(null)
   const [draft, setDraft] = useState("")
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -101,7 +98,7 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
 
         {/* Tipo de activo */}
         <div>
-          <div className="mb-1 text-xs font-bold uppercase text-gray-500">Tipo de activo</div>
+          <div className="mb-1 text-xs font-bold uppercase text-gray-500">Categoría</div>
           {editingField === "assetType" ? (
             <Select
               value={draft}
@@ -119,14 +116,9 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {visibleSystemTypes.map(([type, label]) => (
-                  <SelectItem key={type} value={type}>
-                    {label}
-                  </SelectItem>
-                ))}
-                {customAssetTypes.map((ct) => (
-                  <SelectItem key={ct.id} value={ct.id}>
-                    {ct.name}
+                {categories.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>
+                    {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -138,7 +130,7 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
             >
               <span className="font-medium">
                 {asset.assetType
-                  ? ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType
+                  ? <AssetTypeLabel assetType={asset.assetType} />
                   : <span className="italic text-gray-400">—</span>}
               </span>
               <Pencil className="h-3 w-3 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100" />
@@ -221,6 +213,36 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
             </button>
           )}
         </div>
+
+        {/* Capacidades — lo que antes venía atado al tipo, ahora se activa acá */}
+        {!asset.isGroupParent && (
+          <div className="md:col-span-2 border-t border-gray-200 pt-3">
+            <div className="mb-2 text-xs font-bold uppercase text-gray-500">Capacidades</div>
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={asset.tracksQuantity}
+                onChange={(e) =>
+                  startTransition(async () => {
+                    await updateAsset(asset.id, { tracksQuantity: e.target.checked })
+                    router.refresh()
+                  })
+                }
+                className="mt-0.5"
+              />
+              <div>
+                <div className="font-medium">Se opera en unidades</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Habilita cantidad, precio promedio ponderado y registro de compras.
+                </div>
+              </div>
+            </label>
+            <p className="mt-2 text-xs text-gray-500">
+              Los ingresos recurrentes y los tableros se agregan desde sus propias secciones,
+              más abajo.
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

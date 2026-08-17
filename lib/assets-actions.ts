@@ -52,10 +52,11 @@ export async function loadAsset(id: string): Promise<Asset | null> {
 
 export async function createAsset(data: {
   name: string
-  assetType: AssetType
+  assetType?: AssetType | null
   ticker?: string
   amount: number
   currency: Currency
+  tracksQuantity?: boolean
   currentQty?: number
   avgBuyPrice?: number
   description?: string
@@ -71,7 +72,8 @@ export async function createAsset(data: {
       name: data.name,
       amount: data.amount,
       currency: data.currency,
-      assetType: data.assetType,
+      assetType: data.assetType ?? null,
+      tracksQuantity: data.tracksQuantity ?? false,
       ticker: data.ticker ?? null,
       currentQty: data.currentQty ?? null,
       avgBuyPrice: data.avgBuyPrice ?? null,
@@ -114,7 +116,8 @@ export async function updateAsset(
     amount?: number
     currency?: Currency
     ticker?: string
-    assetType?: AssetType
+    assetType?: AssetType | null
+    tracksQuantity?: boolean
     currentQty?: number
     avgBuyPrice?: number
     description?: string
@@ -137,6 +140,7 @@ export async function updateAsset(
       ...(data.currency !== undefined && { currency: data.currency }),
       ...(data.ticker !== undefined && { ticker: data.ticker }),
       ...(data.assetType !== undefined && { assetType: data.assetType }),
+      ...(data.tracksQuantity !== undefined && { tracksQuantity: data.tracksQuantity }),
       ...(data.currentQty !== undefined && { currentQty: data.currentQty }),
       ...(data.avgBuyPrice !== undefined && { avgBuyPrice: data.avgBuyPrice }),
       ...(data.description !== undefined && { description: data.description }),
@@ -305,43 +309,72 @@ export async function collectDividend(
   const rawMeta = (record?.metadata as Record<string, unknown>) ?? {}
   const boards = extractBoards(rawMeta)
 
+  // El Corte Mensual puede haber creado ya un ingreso con la ganancia estimada.
+  // En ese caso se concilia ese mismo ingreso en lugar de crear uno nuevo.
+  const existing = boards
+    .flatMap((b) => (b.id === boardId ? (b.dividends ?? []) : []))
+    .find((d) => d.id === dividendId)
+  const existingIngresoId = existing?.ingresoRecordId
+  const previousAmount = existingIngresoId ? (existing?.estimatedGain ?? 0) : 0
+  const targetIngresoId = existingIngresoId ?? ingresoId
+
   const updatedBoards = boards.map((b) => {
     if (b.id !== boardId) return b
     return {
       ...b,
       dividends: (b.dividends ?? []).map((d) =>
-        d.id === dividendId ? { ...d, actualGain, ingresoRecordId: ingresoId } : d,
+        d.id === dividendId ? { ...d, actualGain, ingresoRecordId: targetIngresoId } : d,
       ),
     }
   })
 
   await prisma.$transaction([
-    prisma.record.create({
-      data: {
-        id: ingresoId,
-        type: "ingreso",
-        name: `Ganancia dividendos ${assetName}`,
-        amount: actualGain,
-        currency,
-        userId,
-        linkedTo: assetId,
-      },
-    }),
+    existingIngresoId
+      ? prisma.record.update({
+          where: { id: existingIngresoId, userId },
+          data: {
+            name: `Ganancia dividendos ${assetName}`,
+            amount: actualGain,
+            currency,
+            // Sin tocar el status: si un corte posterior ya lo archivó, cobrarlo
+            // corrige el monto histórico en vez de reinyectarlo al mes en curso
+          },
+        })
+      : prisma.record.create({
+          data: {
+            id: ingresoId,
+            type: "ingreso",
+            name: `Ganancia dividendos ${assetName}`,
+            amount: actualGain,
+            currency,
+            userId,
+            linkedTo: assetId,
+          },
+        }),
     prisma.record.update({
       where: { id: assetId, userId },
       data: { metadata: { ...rawMeta, boards: updatedBoards as unknown as object } },
     }),
   ])
-  await createJournalEntry(userId, {
-    description: `Ganancia dividendos ${assetName}`,
-    currency,
-    amount: actualGain,
-    debitAccount: "efectivo",
-    creditAccount: "ingresos",
-    targetEntityId: ingresoId,
-    reference: dividendId,
-  })
-  return ingresoId
+
+  // Con ingreso preexistente solo se asienta el ajuste; el estimado ya fue asentado
+  // por el corte. Sin él, se asienta el total.
+  const delta = existingIngresoId ? actualGain - previousAmount : actualGain
+  if (delta !== 0) {
+    await createJournalEntry(userId, {
+      description: existingIngresoId
+        ? `Ajuste dividendos ${assetName} (real vs. estimado)`
+        : `Ganancia dividendos ${assetName}`,
+      currency,
+      amount: Math.abs(delta),
+      debitAccount: delta > 0 ? "efectivo" : "ingresos",
+      creditAccount: delta > 0 ? "ingresos" : "efectivo",
+      targetEntityId: targetIngresoId,
+      reference: dividendId,
+    })
+  }
+
+  return targetIngresoId
 }
 
 export async function collectFixedTerm(
@@ -505,7 +538,9 @@ export async function createGroup(
         name,
         amount: totalAmount,
         currency,
-        assetType: "GROUP",
+        // Agrupar es una capacidad estructural (se deriva de tener hijos),
+        // no una categoría. Desde v2.5.0 el grupo nace sin etiqueta.
+        assetType: null,
         userId,
       },
     }),
@@ -781,6 +816,7 @@ type DbRecord = {
   id: string
   name: string
   assetType: string | null
+  tracksQuantity?: boolean
   ticker: string | null
   amount: { toNumber: () => number } | number
   currency: string
@@ -833,7 +869,8 @@ function mapToAsset(r: DbRecord): Asset {
   return {
     id: r.id,
     name: r.name,
-    assetType: (r.assetType ?? "STOCK") as AssetType,
+    assetType: r.assetType ?? "",
+    tracksQuantity: r.tracksQuantity ?? false,
     ticker: r.ticker ?? undefined,
     amount: toNum(r.amount) ?? 0,
     currency: r.currency as Currency,

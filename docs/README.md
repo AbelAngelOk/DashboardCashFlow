@@ -1,6 +1,6 @@
 # Documentación — DashboardCashFlow
 
-> **Versión actual del proyecto: 2.1.0** — Ver [CHANGELOG.md](CHANGELOG.md) para historial completo.
+> **Versión actual del proyecto: 2.5.0** — Ver [CHANGELOG.md](CHANGELOG.md) para historial completo.
 
 ## Empezar por acá
 
@@ -18,7 +18,9 @@
 | [modules/gastos.md](modules/gastos.md) | Gastos — Registros de gastos con agrupación y versionado |
 | [modules/ingresos.md](modules/ingresos.md) | Ingresos — Registros de ingresos con agrupación y versionado |
 | [modules/obligaciones.md](modules/obligaciones.md) | Obligaciones — Deudas y compromisos periódicos |
+| [modules/flujos-de-ingresos.md](modules/flujos-de-ingresos.md) | Flujos de Ingresos — Sueldos, préstamos y rentas periódicas |
 | [modules/libro-contable.md](modules/libro-contable.md) | Libro Contable — Doble entrada |
+| [modules/corte-mensual.md](modules/corte-mensual.md) | Corte Mensual — Cierre de período y armado del mes entrante |
 | [modules/snapshots.md](modules/snapshots.md) | Snapshots — Capturas periódicas del estado |
 | [modules/historial.md](modules/historial.md) | Historial — Log de auditoría paginado |
 | [modules/configuracion.md](modules/configuracion.md) | Configuración — Monedas, tipos, marcadores |
@@ -27,6 +29,10 @@
 
 | Versión | Archivo |
 |---------|---------|
+| v2.5.0 | [releases/v2.5.0.md](releases/v2.5.0.md) |
+| v2.4.0 | [releases/v2.4.0.md](releases/v2.4.0.md) |
+| v2.3.0 | [releases/v2.3.0.md](releases/v2.3.0.md) |
+| v2.2.0 | [releases/v2.2.0.md](releases/v2.2.0.md) |
 | v2.1.0 | [releases/v2.1.0.md](releases/v2.1.0.md) |
 | v2.0.0 | [releases/v2.0.0.md](releases/v2.0.0.md) |
 
@@ -84,6 +90,8 @@ Documentos de propuesta ya implementados, conservados como referencia histórica
 
 Análisis detallados generados durante la auditoría de código:
 
+- [analisis/Clasificacion-Tipos-de-Activo.md](analisis/Clasificacion-Tipos-de-Activo.md) — ¿los tipos de activo entran en la taxonomía Recurrente/Cuotas/Fijo de las obligaciones?
+- [analisis/Validacion-Casos-de-Uso-Activos.md](analisis/Validacion-Casos-de-Uso-Activos.md) — validación de 8 casos con rendimiento periódico; análisis del bono y del bot de rebalanceo
 - [analisis/Inconsistencias.md](analisis/Inconsistencias.md)
 - [analisis/Refactorizaciones-Recomendadas.md](analisis/Refactorizaciones-Recomendadas.md)
 - [analisis/Codigo-Muerto.md](analisis/Codigo-Muerto.md)

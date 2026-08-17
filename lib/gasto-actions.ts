@@ -443,7 +443,7 @@ export async function createGastoAndNewAsset(
   gastoData: { name: string; amount: number; currency: Currency },
   assetData: {
     name: string
-    assetType: AssetType
+    assetType?: AssetType | null
     amount: number
     currency: Currency
     description?: string
@@ -461,7 +461,7 @@ export async function createGastoAndNewAsset(
       name: assetData.name,
       amount: assetData.amount,
       currency: assetData.currency,
-      assetType: assetData.assetType,
+      assetType: assetData.assetType ?? null,
       description: assetData.description ?? null,
       userId,
       status: "ACTIVE",

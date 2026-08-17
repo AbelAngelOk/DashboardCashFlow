@@ -1,6 +1,6 @@
 ---
-Versión: 2.1.0
-Última actualización: 2026-08-04
+Versión: 2.5.0
+Última actualización: 2026-08-17
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -61,7 +61,7 @@ flowchart TB
     end
 
     subgraph PAT["💼 Patrimonio"]
-        ACT["Activos<br/>10 tipos de instrumento"]
+        ACT["Activos<br/>Capacidades configurables"]
         OBL["Obligaciones<br/>Recurrentes / Cuotas / Fijas"]
     end
 
@@ -80,7 +80,7 @@ flowchart TB
     end
 
     subgraph CONF["⚙️ Configuración"]
-        SET["Personalización<br/>Monedas · Tipos · Marcadores"]
+        SET["Personalización<br/>Monedas · Categorías · Marcadores"]
     end
 
     DASH -.->|edita| ACT
@@ -111,15 +111,15 @@ flowchart TB
 
 | Sección | Ruta | Qué resuelve |
 |---|---|---|
-| Dashboard | `/` | Vista única del estado financiero, editable en línea |
-| Activos | `/activos`, `/activos/[id]` | Portafolio de inversiones con paneles por tipo y tableros |
+| Dashboard | `/` | Vista única del estado financiero, editable en línea; punto de entrada del corte mensual |
+| Activos | `/activos`, `/activos/[id]` | Portafolio con capacidades configurables por activo y tableros |
 | Obligaciones | `/obligaciones`, `/obligaciones/[id]` | Deudas y compromisos con cronograma de pagos |
 | Ingresos | `/ingresos`, `/ingresos/[id]` | Registro de entradas con origen, agrupación y versionado |
 | Gastos | `/gastos`, `/gastos/[id]` | Registro de salidas con origen, agrupación y versionado |
 | Snapshots | `/snapshots`, `/snapshots/[id]` | Comparación entre períodos |
 | Libro Contable | `/libro-contable` | Asientos de doble entrada y saldos por cuenta |
 | Historial | `/historial` | Auditoría paginada y filtrable de todos los cambios |
-| Personalización | `/configuracion` | Monedas, tipos de activo, marcadores |
+| Personalización | `/configuracion` | Monedas, categorías de activo, marcadores, día de corte |
 
 > `/movimientos` existe como vista legacy del log de auditoría (no está en la navegación lateral; `/historial` es su reemplazo con paginación server-side).
 
@@ -133,8 +133,8 @@ flowchart TB
 |---|---|---|
 | **Usuario** | Titular de los datos; frontera de aislamiento | Registro público |
 | **Registro** | Unidad económica base. Cuatro tipos: **Ingreso**, **Gasto**, **Activo**, **Pasivo** | Usuario o el sistema (efectos secundarios) |
-| **Activo** | Registro con instrumento financiero: tipo, ticker, cantidad, precio promedio | Usuario desde `/activos` o desde un gasto |
-| **Grupo de Activos** | Activo especial (`GROUP`) que organiza otros activos como hijos | Usuario desde `/activos` (modo "Agrupar") |
+| **Activo** | Registro con valor patrimonial. Su comportamiento sale de las capacidades que tenga activadas, no de un tipo | Usuario desde `/activos` o desde un gasto |
+| **Grupo de Activos** | Activo que contiene otros como hijos y vale su suma. No es un tipo: es una capacidad estructural | Usuario desde `/activos` (modo "Agrupar") |
 | **Movimiento de Activo** | Operación sobre un activo: compra, venta, depósito, extracción, ajuste, dividendo, comisión, cobro | Sistema al operar sobre el activo |
 | **Tablero** | Panel opcional dentro de un activo: **Dividendos** o **Personalizado** | Usuario desde el detalle del activo |
 | **Dividendo** | Entrada de un tablero de dividendos: mes, %, ganancia estimada y real | Usuario; puede autogenerarse en series recurrentes |
@@ -144,11 +144,15 @@ flowchart TB
 | **Regla de Obligación** | Patrón de recurrencia de una obligación (mensual/trimestral/semestral/anual) | Usuario al configurar una obligación recurrente |
 | **Cuota** | Vencimiento numerado de una obligación en cuotas | Sistema al crear la obligación |
 | **Pago de Obligación** | Vencimiento esperado de una regla recurrente, aceptable o rechazable | Sistema, en ventana móvil de 12 meses |
+| **Regla de Ingreso** | Patrón de recurrencia que hace que un activo genere ingresos. Puede descontar capital | Usuario, al crear el activo o desde su detalle |
+| **Cobro Esperado** | Vencimiento concreto de una regla de ingreso, confirmable con el monto real | Sistema, en ventana móvil de 12 meses |
 | **Asiento Contable** | Par débito/crédito que registra un evento financiero | Sistema, en cada operación financiera |
 | **Snapshot** | Copia congelada del dashboard en un momento dado | Usuario desde el dashboard |
 | **Registro de Auditoría** | Traza de creación/edición/eliminación con comentario editable | Sistema, en cada mutación |
 | **Marcador** | Etiqueta de color definida por el usuario | Usuario desde `/configuracion` o desde una fila |
-| **Configuración** | Moneda base, tasas de cambio, tipos de activo visibles y propios | Usuario desde `/configuracion` |
+| **Corte Mensual** | Cierre de un período: archiva el mes que sale y prepara el que entra | Usuario, confirmando el diálogo en el Dashboard |
+| **Categoría de Activo** | Etiqueta libre para organizar el portafolio. No determina comportamiento | Usuario desde `/configuracion` o al crear un activo |
+| **Configuración** | Moneda base, tasas de cambio, día de corte | Usuario desde `/configuracion` |
 
 ### 3.2 Diagrama de entidades
 
@@ -181,6 +185,10 @@ erDiagram
     GRUPO_FLUJO }o--o{ INGRESO : "agrupa"
     GRUPO_FLUJO }o--o{ GASTO : "agrupa"
 
+    ACTIVO ||--o{ REGLA_INGRESO : "define"
+    REGLA_INGRESO ||--o{ COBRO_ESPERADO : "programa"
+    COBRO_ESPERADO ||--o| INGRESO : "materializa"
+
     OBLIGACION ||--o{ REGLA : "define"
     OBLIGACION ||--o{ CUOTA : "programa"
     OBLIGACION ||--o{ PAGO : "espera"
@@ -194,6 +202,11 @@ erDiagram
     SNAPSHOT ||--o{ COPIA_REGISTRO : "congela"
     ASIENTO }o--o| REGISTRO : "referencia"
     AUDITORIA }o--o| REGISTRO : "traza"
+
+    USUARIO ||--o{ CORTE : "ejecuta"
+    CORTE ||--o{ INGRESO : "archiva y genera"
+    CORTE ||--o{ GASTO : "archiva y genera"
+    CORTE ||--o| SNAPSHOT : "puede tomar"
 ```
 
 ### 3.3 Detalle por entidad
@@ -213,22 +226,24 @@ Todos comparten: nombre, monto, moneda, fecha de operación, estado y marcador. 
 
 > **Pasivo vs. Obligación**: son cosas distintas. Un **Pasivo** es una fila manual del Balance con un monto. Una **Obligación** es una entidad con cronograma que aparece en el Balance como fila derivada (calculada de sus reglas o cuotas pendientes) y que genera gastos al pagarse. El dashboard muestra ambos en la misma columna "Obligaciones".
 
-#### Activo — instrumentos soportados
+#### Activo — una entidad, cuatro capacidades
 
-| Tipo | Qué aporta el panel dedicado |
-|---|---|
-| **STOCK** — Acciones | Dividendos estimados vs. reales, con series recurrentes |
-| **CRYPTO** | Cantidad y precio promedio ponderado |
-| **FUTURES** — Futuros | Posición LONG/SHORT por movimiento; liquidación |
-| **OPTIONS** — Opciones | Cantidad y precio |
-| **FIXED_TERM** — Plazo Fijo | Tasa anual, fechas de inicio/fin, retorno proyectado, cobro |
-| **BOND** — Bonos | Cronograma de desembolsos con seguimiento de cobros |
-| **TRADING** | Monto invertido vs. obtenido |
-| **TRADING_BOT** | Agregados de ganado / perdido / extraído + ROI |
-| **REBALANCE_BOT** | Sub-activos con distribución proporcional de aportes y extracciones |
-| **GROUP** | Organizador: agrupa hijos y totaliza (nunca aparece en los selectores de tipo) |
+**Un activo no tiene tipo.** Hasta v2.4.0 existían once tipos fijos y cada uno traía su comportamiento; desde v2.5.0 el tipo es solo una **categoría**: una etiqueta libre para organizar la lista, sin efecto alguno sobre lo que el activo hace.
 
-Además, el usuario puede **ocultar tipos del sistema** y **definir tipos propios** desde `/configuracion`.
+Lo que un activo puede hacer se define activando capacidades:
+
+| Capacidad | Qué habilita | Reemplaza a los viejos |
+|---|---|---|
+| **Se opera en unidades** | Cantidad, precio promedio ponderado y registro de compras | Acciones, Crypto, Futuros, Opciones |
+| **Genera ingresos recurrentes** | Reglas periódicas con proyección anual y cobros confirmables | Flujo de Ingresos, cupones de Bonos |
+| **Tableros de seguimiento** | Dividendos con series recurrentes, o una tabla propia | Los dividendos de Acciones |
+| **Agrupa otros activos** | El valor se calcula sumando los hijos | Grupo, Bot de Rebalanceo |
+
+Se combinan libremente: una crypto en staking lleva *unidades* + *ingresos*; un departamento alquilado, solo *ingresos*; una acción con dividendos, *unidades* + *tableros*.
+
+**Presets al crear**: el formulario ofrece cuatro puntos de partida —Inversión en unidades, Renta o sueldo, Préstamo o cobro en cuotas, Activo simple— que solo precargan capacidades. No quedan grabados: todo se cambia después desde el detalle.
+
+> **Por qué el cambio**: los once tipos nunca fueron categorías irreducibles. El análisis en [analisis/Clasificacion-Tipos-de-Activo.md](analisis/Clasificacion-Tipos-de-Activo.md) mostró que descomponían en cuatro atributos ortogonales, y que el sistema implementaba la misma recurrencia tres veces por no reconocerlo.
 
 #### Obligación — tres modelos de compromiso
 
@@ -240,11 +255,25 @@ Además, el usuario puede **ocultar tipos del sistema** y **definir tipos propio
 
 Aceptar un pago o una cuota **activa el gasto** correspondiente; rechazarlo lo **cancela**.
 
+#### Flujo de Ingresos — la obligación al revés
+
+Un activo puede llevar **reglas de ingreso**: el mismo mecanismo de recurrencia, invertido. Donde una obligación proyecta un costo anual y genera gastos, un flujo de ingresos proyecta una ganancia anual y genera ingresos.
+
+| Caso | Valor del activo | Reglas |
+|---|---|---|
+| **Salario** | `0` — un sueldo no es patrimonio | 1: *Sueldo*, sin descontar capital |
+| **Préstamo otorgado** | Capital prestado, baja mes a mes | 2: *Capital* (descuenta) + *Interés* (no descuenta) |
+| **Cobro en cuotas** | Valor que baja con cada cobro | 1: *Cuota*, descuenta capital |
+
+La pieza que distingue los tres casos es el flag **"descuenta del capital"** por regla. Y tiene consecuencia contable: cobrar capital no es ganancia sino conversión de un activo en efectivo, así que asienta `efectivo / activos` en vez de `efectivo / ingresos`.
+
+Las reglas de ingreso no son exclusivas de ninguna categoría: **cualquier activo puede tenerlas** — un inmueble con alquiler, un bono con cupón. El formulario de alta las ofrece para todos los tipos.
+
 ---
 
 ## 4. Relaciones entre entidades
 
-Existen **siete tipos de relación** en el producto. Entenderlas es entender el sistema.
+Existen **ocho tipos de relación** en el producto. Entenderlas es entender el sistema.
 
 ### 4.1 Jerárquica — Grupo de Activos → Activos hijos
 
@@ -265,6 +294,7 @@ flowchart LR
     A -->|"cobro de plazo fijo"| I
     A -->|"venta / extracción parcial"| I
     A -->|"liquidación total"| I
+    A -->|"cobro de una regla de ingreso"| I
 ```
 
 Cada ingreso y cada gasto declara su **fuente**, resuelta automáticamente al listarlo:
@@ -281,6 +311,7 @@ Cada ingreso y cada gasto declara su **fuente**, resuelta automáticamente al li
 | Plazo fijo | Cobro al vencimiento |
 | Liquidación | Cierre total del activo |
 | Extracción | Venta o retiro parcial |
+| Flujo recurrente | Cobro de una regla de ingreso: sueldo, cuota, interés, alquiler |
 | Manual | Ingreso autónomo |
 
 ### 4.3 De atribución — Gasto ↔ Ingreso (N:M con monto)
@@ -334,6 +365,40 @@ Cada evento financiero produce un asiento con cuenta debitada y acreditada. Las 
 | Liquidación de activo | efectivo | activos |
 | Pago de obligación aceptado | gastos | efectivo |
 | Nuevo período (ingreso / gasto) | efectivo / gastos | ingresos / efectivo |
+| Corte: gasto de obligación activado | gastos | efectivo |
+| Corte: ingreso de dividendo estimado | efectivo | ingresos |
+| Cobro real distinto del estimado | ajuste por la diferencia | ajuste por la diferencia |
+| Cobro de una regla de ingreso (renta) | efectivo | ingresos |
+| Cobro de una regla que descuenta capital | efectivo | **activos** |
+
+### 4.8 Temporal — Corte Mensual ↔ período
+
+Las siete relaciones anteriores son estructurales: existen mientras existan las entidades. Ésta es **temporal**: marca el momento en que un mes deja de estar abierto.
+
+```mermaid
+flowchart LR
+    P1["Período que sale<br/>ingresos y gastos ACTIVE"]
+    C(["✂️ CORTE"])
+    P2["Período que entra<br/>generado desde obligaciones y activos"]
+
+    P1 -->|"pasan a HISTORICAL"| C
+    C -->|"activa gastos de obligaciones"| P2
+    C -->|"crea ingresos de dividendos"| P2
+    C -.->|"opcional: snapshot"| S["📷 Foto del mes que sale"]
+```
+
+Lo que **cruza** el corte y lo que **no**:
+
+| Entidad | ¿Sobrevive al corte? |
+|---|---|
+| Activo, Grupo de Activos, Movimiento, Tablero | Sí — son permanentes |
+| Obligación, Regla, Cuota, Pago | Sí — su cronograma es plurianual |
+| Ingreso, Gasto | **No** — pasan a histórico, salvo que estén etiquetados y se active el switch |
+| Vínculo Gasto↔Ingreso, cadena de versiones | Sí — la trazabilidad no depende de la vigencia |
+| Etiqueta sobre ingreso o gasto | Sí, junto con su registro |
+| Etiqueta sobre activo u obligación | Depende del switch de limpieza |
+
+Esta asimetría es lo que da sentido a los dos switches de etiquetas: sobre entidades efímeras, una etiqueta suele significar *"pendiente de resolver"* y conviene que persista; sobre entidades permanentes, suele significar *"ya lo miré este mes"* y conviene limpiarla.
 
 ---
 
@@ -351,7 +416,9 @@ stateDiagram-v2
 
     ACTIVE --> HISTORICAL: eliminado del Dashboard
     ACTIVE --> HISTORICAL: reemplazado por nuevo período
+    ACTIVE --> HISTORICAL: corte de mes
     ACTIVE --> ARCHIVED: archivado por el usuario
+    PENDING --> ACTIVE: corte de mes (cuota del mes entrante)
 
     HISTORICAL --> ACTIVE: restaurado
     ARCHIVED --> ACTIVE: restaurado
@@ -408,16 +475,33 @@ stateDiagram-v2
     OVERDUE --> REJECTED: rechazado
 ```
 
-### 5.5 Dividendo
+### 5.5 Período mensual
+
+```mermaid
+stateDiagram-v2
+    [*] --> Abierto: comienza el día de corte
+    Abierto --> Vencido: llega el día de corte del mes siguiente
+    Vencido --> Vencido: el usuario descarta el aviso
+    Vencido --> Cerrado: corte confirmado
+    Cerrado --> [*]
+```
+
+Un período **vencido** no se cierra solo: el aviso puede descartarse tantas veces como se quiera, y el botón del Dashboard sigue disponible hasta que se confirme. Un período **cerrado** no puede volver a cortarse.
+
+### 5.6 Dividendo
 
 ```mermaid
 stateDiagram-v2
     [*] --> Estimado: alta con % y ganancia esperada
     Estimado --> Estimado: series recurrentes autogeneradas (12 meses)
+    Estimado --> Proyectado: el corte crea el ingreso por el monto estimado
     Estimado --> Notificado: llegó su mes y sigue sin cobrar
+    Proyectado --> Notificado: llegó su mes y sigue sin cobrar
     Notificado --> Cobrado: se registra la ganancia real
-    Cobrado --> [*]: genera un ingreso vinculado al activo
+    Cobrado --> [*]: el ingreso queda con el monto real
 ```
+
+Si el dividendo pasó por **Proyectado**, cobrarlo **actualiza** ese ingreso en vez de crear uno nuevo, y asienta solo la diferencia entre lo estimado y lo real.
 
 ---
 
@@ -440,6 +524,10 @@ stateDiagram-v2
 | 11 | Marcadores de color por fila |
 | 12 | Acceso al detalle de cualquier activo, ingreso o gasto |
 | 13 | Tomar snapshot del estado actual |
+| 14 | Aviso automático de corte cuando el período venció |
+| 15 | Botón "Realizar corte de mes", visible solo cuando corresponde |
+| 16 | Vista previa del impacto del corte antes de confirmarlo |
+| 17 | Corte con tres opciones: snapshot, conservar etiquetados, limpiar etiquetas |
 
 ### Activos `/activos`
 
@@ -458,6 +546,12 @@ stateDiagram-v2
 | 11 | Modo "Agrupar": crear grupo nuevo o asignar a uno existente |
 | 12 | Desagrupar, quitar del grupo, eliminar grupo |
 | 13 | Liquidación y eliminación física con guarda de saldo cero |
+| 14 | Tipo "Flujo de Ingresos" con presets Salario / Préstamo / Cuotas |
+| 15 | Ingresos recurrentes en cualquier activo: alta desde el formulario o desde el detalle |
+| 16 | Proyección de ganancia anual por moneda |
+| 17 | Reglas de ingreso: editar, pausar, reanudar, eliminar |
+| 18 | Confirmación de cobro con el monto real, distinto del esperado |
+| 19 | Cobros que descuentan capital: bajan el activo y dejan movimiento `EXTRACT` |
 
 ### Ingresos `/ingresos` y Gastos `/gastos`
 
@@ -523,9 +617,10 @@ stateDiagram-v2
 |---|---|
 | 1 | Moneda base y activación de la conversión |
 | 2 | Tasas de cambio manuales o actualizadas desde API externa |
-| 3 | Ocultar tipos de activo del sistema |
-| 4 | Definir tipos de activo propios |
+| 3 | Crear, renombrar y eliminar categorías de activo |
+| 4 | Ver cuántos activos usa cada categoría antes de eliminarla |
 | 5 | Gestión de marcadores: nombre, color, orden |
+| 6 | Día de corte mensual (1–28), con último corte y próximo corte a la vista |
 
 ### Transversales
 
@@ -624,7 +719,7 @@ flowchart TB
 
 El colegio se pagó con dos fuentes. Nada obliga a que las atribuciones cubran el 100 % del gasto: los 600 USD quedan cubiertos en su totalidad, pero podrían no estarlo sin que el sistema lo impida.
 
-### 7.6 Cerrar el mes
+### 7.6 Guardar una foto puntual
 
 ```mermaid
 flowchart LR
@@ -633,6 +728,30 @@ flowchart LR
     C --> D["Vista de snapshot<br/>solo lectura"]
     D --> E["Comparar contra<br/>otros períodos"]
 ```
+
+### 7.7 Cerrar el mes
+
+```mermaid
+sequenceDiagram
+    actor U as Usuario
+    participant D as Dashboard
+    participant O as Obligaciones
+    participant A as Activos
+    participant S as Snapshots
+
+    Note over D: Venció el período de Agosto
+    D-->>U: Aviso "Corte de mes — Agosto 2026"
+    U->>D: Elige las opciones y confirma
+    D->>S: Guarda "Cierre Agosto 2026"
+    D->>D: Ingresos y gastos activos → histórico
+    Note over D: Los etiquetados se conservan<br/>si el switch está activo
+    O->>D: Activa los gastos con vencimiento en Septiembre
+    A->>D: Crea los ingresos de dividendos de Septiembre
+    D->>D: Quita etiquetas de activos y obligaciones
+    D-->>U: Dashboard con el mes nuevo ya armado
+```
+
+Si el usuario elige "Ahora no", el aviso deja de aparecer solo pero **el corte sigue pendiente**: el botón del Dashboard queda disponible hasta que lo confirme.
 
 ---
 
@@ -682,6 +801,19 @@ flowchart TB
 | **RP-13** | El tipo `GROUP` nunca aparece en los selectores de tipo de activo | Es un organizador, no un instrumento |
 | **RP-14** | Cada usuario ve solo sus datos, sin excepción | Aislamiento por sesión en toda consulta |
 | **RP-15** | Las tasas de cambio y preferencias viven en el navegador, no en la base | Son preferencias de visualización, no datos financieros |
+| **RP-16** | El corte mensual nunca se ejecuta automáticamente | Mueve decenas de registros: exige una decisión consciente |
+| **RP-17** | Un período solo puede cortarse una vez, y solo después de su fecha | Impide cortar a diario o duplicar el cierre de un mes |
+| **RP-18** | Descartar el aviso de corte no consume el corte | Postergar no debe equivaler a renunciar |
+| **RP-19** | El día de corte vive en la base, no en el navegador | El servidor es quien decide la elegibilidad; no puede depender del cliente |
+| **RP-20** | Activar el gasto de una obligación en el corte no lo da por pagado | Confirmar un pago sigue siendo un acto explícito del usuario |
+| **RP-21** | Cobrar capital asienta contra `activos`, no contra `ingresos` | Recuperar lo prestado no es ganancia; inflarlo descuadraría el patrimonio |
+| **RP-22** | Un cobro se confirma con el monto **real**, que puede diferir del esperado | Un sueldo con ajustes por inflación nunca coincide con lo proyectado |
+| **RP-23** | Editar una regla solo regenera lo pendiente que aún no llegó al dashboard | Corregir el futuro no debe reescribir el pasado ni el mes en curso |
+| **RP-24** | Las reglas de ingreso viven en cualquier activo, no en un tipo especial | Un alquiler o un cupón son ingresos recurrentes de activos comunes |
+| **RP-25** | La categoría de un activo es solo una etiqueta: nunca determina comportamiento | Los once tipos viejos eran presets sobre cuatro atributos; atarlos al nombre impedía combinarlos |
+| **RP-26** | El panel operativo de un activo se decide por los datos que tiene, no por su etiqueta | Permite renombrar o borrar categorías sin romper ningún activo |
+| **RP-27** | Eliminar una categoría deja sin etiqueta a sus activos, nunca los elimina | Organizar no es contener — mismo criterio que RP-07 con los grupos |
+| **RP-28** | Agrupar es una capacidad estructural, no una categoría | Un grupo se reconoce por tener hijos; su valor se deriva de ellos (RP-12) |
 
 ---
 
@@ -700,9 +832,12 @@ flowchart TB
 | Vínculo Gasto↔Ingreso | — | — | ✏️ | ✏️ | — | — | — | — | — |
 | Obligación | 👁 | — | — | 🔗 | ✏️ | 👁 | — | — | — |
 | Regla / Cuota / Pago | 👁 | — | — | 🔗 | ✏️ | 👁 | — | — | — |
+| Regla de Ingreso / Cobro | 🔗 | ✏️ | 🔗 | — | — | 👁 | — | 👁 | — |
 | Asiento Contable | — | — | — | — | — | ✏️ | 👁 | — | — |
 | Snapshot | ✏️ | — | — | — | — | — | ✏️ | — | — |
+| Categoría de Activo | 👁 | ✏️ | — | 🔗 | — | — | — | — | ✏️ |
 | Marcador | 👁 | ✏️ | ✏️ | ✏️ | ✏️ | — | — | — | ✏️ |
+| Corte Mensual | ✏️ | — | 🔗 | 🔗 | 🔗 | 🔗 | 📷 | 👁 | ⚙️ |
 | Configuración | 👁 | 👁 | 👁 | 👁 | 👁 | 👁 | 👁 | — | ✏️ |
 
 **Leyenda**: ✏️ se crea o edita · 👁 solo se visualiza · 🔗 aparece como relación · 📷 se congela · ⚙️ se configura su tipo · — no aplica
@@ -736,5 +871,7 @@ Lo que el producto **hoy no hace**, para evitar expectativas equivocadas:
 | [03-Modelo-de-Datos.md](03-Modelo-de-Datos.md) | Tablas, columnas, índices y restricciones |
 | [04-Flujos-Principales.md](04-Flujos-Principales.md) | Flujos end-to-end con detalle técnico |
 | [09-Glosario.md](09-Glosario.md) | Definición de términos del dominio |
+| [modules/corte-mensual.md](modules/corte-mensual.md) | Modelo de período, pasos del corte y casos borde |
+| [modules/flujos-de-ingresos.md](modules/flujos-de-ingresos.md) | Reglas de ingreso, presets, descuento de capital y tratamiento contable |
 | [financial-domain-architecture.md](financial-domain-architecture.md) | Mapeo completo operación → cuentas contables |
 | [modules/](modules/) | Detalle funcional, reglas y Server Actions por módulo |

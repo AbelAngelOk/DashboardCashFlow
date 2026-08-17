@@ -1,6 +1,6 @@
 ---
-Versión: 2.1.0
-Última actualización: 2026-08-04
+Versión: 2.3.0
+Última actualización: 2026-08-17
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -36,6 +36,7 @@ Consolidar en un solo lugar el panorama financiero personal cuando se tienen:
 | Estado de Resultados | Registro y totalización de ingresos y gastos, con cálculo de Flujo de Caja mensual |
 | Balance | Registro de activos (inversiones) y pasivos (obligaciones) |
 | Gestión de Activos | Módulo detallado para múltiples tipos de instrumentos financieros con historial de movimientos |
+| Corte Mensual | Cierre de período confirmado: archiva los ingresos y gastos del mes que sale y arma los del entrante desde obligaciones y activos |
 | Snapshots | Congelamiento del estado del dashboard en un punto del tiempo para comparación histórica |
 | Log de Movimientos | Auditoría automática de cada creación, edición o eliminación de registros |
 | Conversión de Monedas | Consolidación multi-moneda con tasas de cambio actualizables desde API externa |

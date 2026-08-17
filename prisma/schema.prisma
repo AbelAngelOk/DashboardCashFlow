@@ -24,7 +24,12 @@ model Record {
   operationDate     DateTime? @map("operation_date")
   deletedAt         DateTime? @map("deleted_at")
   status            String    @default("ACTIVE") // "ACTIVE" | "PENDING" | "CANCELLED" | "HISTORICAL" | "ARCHIVED"
+  // Desde v2.5.0 es una ETIQUETA: guarda el id de una AssetCategory.
+  // Los valores legados (STOCK, BOND, ...) resuelven contra categorías sembradas
+  // con ese mismo id, así que no hizo falta migrar los registros.
   assetType         String?   @map("asset_type")
+  // Capacidad: el activo se opera en unidades (cantidad + precio promedio)
+  tracksQuantity    Boolean   @default(false) @map("tracks_quantity")
   ticker            String?
   currentQty        Decimal?  @map("current_quantity")    @db.Decimal(18, 8)
   avgBuyPrice       Decimal?  @map("avg_buy_price")       @db.Decimal(18, 4)
@@ -38,6 +43,8 @@ model Record {
   groups             RecordGroup[]
   financialMovements FinancialMovement[]
   auditLogs          AuditLog[]
+  incomeRules        IncomeRule[]
+  incomeOccurrences  IncomeOccurrence[]
   parent             Record?             @relation("RecordChildren", fields: [parentId], references: [id])
   children           Record[]            @relation("RecordChildren")
   previousVersion    Record?             @relation("RecordVersions", fields: [previousVersionId], references: [id])
@@ -118,6 +125,9 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt      @map("updated_at")
 
+  // Día del mes (1-28) en que corresponde el corte mensual
+  cutoffDay Int @default(1) @map("cutoff_day")
+
   records            Record[]
   groups             Group[]
   snapshots          Snapshot[]
@@ -129,8 +139,129 @@ model User {
   gastoIngresoLinks  GastoIngresoLink[]
   markers            Marker[]
   entityMarkers      EntityMarker[]
+  monthlyCutoffs     MonthlyCutoff[]
+  incomeRules        IncomeRule[]
+  incomeOccurrences  IncomeOccurrence[]
+  assetCategories    AssetCategory[]
 
   @@map("users")
+}
+
+/// Etiqueta libre de activos. Reemplaza al enum AssetType: desde v2.5.0 la
+/// categoría no determina ningún comportamiento, solo agrupa visualmente.
+model AssetCategory {
+  id        String   @id
+  userId    String   @map("user_id")
+  name      String
+  order     Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, name])
+  @@map("asset_categories")
+  @@index([userId])
+}
+
+// ── Módulo: Flujos de Ingresos ────────────────────────────────────────────────
+// Espejo de ObligationRule / ObligationPayment, colgando de un Record type="activo".
+
+model IncomeRule {
+  id             String   @id @default(uuid())
+  userId         String   @map("user_id")
+  recordId       String   @map("record_id")
+  name           String
+  recurrenceType String   @map("recurrence_type") // "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"
+  startDate      DateTime @map("start_date")
+  expectedAmount Decimal  @db.Decimal(18, 4) @map("expected_amount")
+  currency       String
+  status         String   @default("ACTIVE") // "ACTIVE" | "PAUSED" | "COMPLETED"
+  // true = el cobro descuenta del capital del activo (cuota de préstamo)
+  // false = el cobro es renta pura (sueldo, interés, alquiler)
+  reducesPrincipal Boolean @default(false) @map("reduces_principal")
+
+  // Cómo se determina el monto de cada ocurrencia
+  amountMode String   @default("FIXED") @map("amount_mode") // "FIXED" | "PERCENTAGE"
+  // Solo con amountMode="PERCENTAGE": % sobre el valor del activo al generar la ocurrencia
+  percentage Decimal? @db.Decimal(9, 4)
+  // Solo con amountMode="FIXED": ajuste compuesto de adjustmentPct cada adjustEveryN ocurrencias
+  adjustmentPct Decimal? @db.Decimal(9, 4) @map("adjustment_pct")
+  adjustEveryN  Int?     @map("adjust_every_n")
+
+  // "CASH" = entra efectivo | "IN_KIND" = entra más cantidad del propio activo (staking)
+  settlement String @default("CASH")
+
+  // null = recurrente indefinido | N = cronograma finito de N cuotas
+  installmentCount Int? @map("installment_count")
+
+  createdAt      DateTime @default(now()) @map("created_at")
+  metadata       Json?
+
+  user        User               @relation(fields: [userId], references: [id])
+  record      Record             @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  occurrences IncomeOccurrence[]
+
+  @@map("income_rules")
+  @@index([userId])
+  @@index([recordId])
+}
+
+model IncomeOccurrence {
+  id              String   @id @default(uuid())
+  userId          String   @map("user_id")
+  ruleId          String   @map("rule_id")
+  recordId        String   @map("record_id")
+  expectedDate    DateTime @map("expected_date")
+  expectedAmount  Decimal  @db.Decimal(18, 4) @map("expected_amount")
+  actualAmount    Decimal? @db.Decimal(18, 4) @map("actual_amount")
+  currency        String
+  status          String   @default("PENDING") // "PENDING" | "COLLECTED" | "REJECTED"
+  ingresoRecordId String?  @map("ingreso_record_id")
+  comment         String?
+  // Número de cuota (1..N) cuando la regla tiene cronograma finito
+  installmentNumber Int? @map("installment_number")
+  // Unidades recibidas cuando settlement="IN_KIND"
+  quantity Decimal? @db.Decimal(18, 8)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  user   User       @relation(fields: [userId], references: [id])
+  rule   IncomeRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  record Record     @relation(fields: [recordId], references: [id], onDelete: Cascade)
+
+  @@map("income_occurrences")
+  @@index([ruleId])
+  @@index([recordId])
+  @@index([userId, expectedDate])
+  @@index([userId, status])
+}
+
+// ── Módulo: Corte Mensual ─────────────────────────────────────────────────────
+
+model MonthlyCutoff {
+  id         String   @id @default(uuid())
+  userId     String   @map("user_id")
+  period     String   // "YYYY-MM" del período cerrado
+  cutoffDay  Int      @map("cutoff_day")
+  executedAt DateTime @default(now()) @map("executed_at")
+
+  // Opciones elegidas en el diálogo
+  keptMarked           Boolean @default(false) @map("kept_marked")
+  clearedEntityMarkers Boolean @default(false) @map("cleared_entity_markers")
+  snapshotId           String? @map("snapshot_id")
+
+  // Contadores del impacto
+  gastosArchived    Int @default(0) @map("gastos_archived")
+  ingresosArchived  Int @default(0) @map("ingresos_archived")
+  recordsKept       Int @default(0) @map("records_kept")
+  gastosGenerated   Int @default(0) @map("gastos_generated")
+  ingresosGenerated Int @default(0) @map("ingresos_generated")
+  markersCleared    Int @default(0) @map("markers_cleared")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@unique([userId, period])
+  @@map("monthly_cutoffs")
+  @@index([userId, executedAt])
 }
 
 // ── Libro Contable (Doble Entrada) ────────────────────────────────────────────

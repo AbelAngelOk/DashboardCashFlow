@@ -2,19 +2,20 @@ import type { Currency } from "@/lib/finance"
 
 // ── Asset types ───────────────────────────────────────────────────────────────
 
-export type AssetType =
-  | "STOCK"
-  | "CRYPTO"
-  | "FUTURES"
-  | "OPTIONS"
-  | "REBALANCE_BOT"
-  | "TRADING_BOT"
-  | "TRADING"
-  | "FIXED_TERM"
-  | "BOND"
-  | "GROUP"
+/**
+ * @deprecated Desde v2.5.0 el tipo de activo es una **etiqueta libre**
+ * (`AssetCategory`), no un enum con comportamiento. Se conserva como `string`
+ * para que el código legado siga compilando y para resolver los ids sembrados
+ * a partir de los tipos viejos. Ver `lib/asset-categories.ts`.
+ */
+export type AssetType = string
 
-export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
+/**
+ * @deprecated Nombres de los tipos legados. Movidos a
+ * `LEGACY_TYPE_NAMES` en `lib/asset-categories.ts`; se reexportan acá solo para
+ * no romper importaciones existentes.
+ */
+export const ASSET_TYPE_LABELS: Record<string, string> = {
   STOCK: "Acciones",
   CRYPTO: "Crypto",
   FUTURES: "Futuros",
@@ -24,6 +25,7 @@ export const ASSET_TYPE_LABELS: Record<AssetType, string> = {
   TRADING: "Trading",
   FIXED_TERM: "Plazo Fijo",
   BOND: "Bonos",
+  INCOME_STREAM: "Flujo de Ingresos",
   GROUP: "Grupo",
 }
 
@@ -216,10 +218,13 @@ export interface AssetFinancialMovement {
 export interface Asset {
   id: string
   name: string
+  /** Etiqueta libre: id de una `AssetCategory`. No determina comportamiento. */
   assetType: AssetType
   ticker?: string
   amount: number
   currency: Currency
+  /** Capacidad: se opera en unidades (cantidad + precio promedio) */
+  tracksQuantity: boolean
   currentQty?: number
   avgBuyPrice?: number
   description?: string
@@ -285,6 +290,50 @@ export function generateRecurringDividends(
     })
   }
   return entries
+}
+
+/**
+ * Extiende las series de dividendos recurrentes hasta cubrir `throughMonth`.
+ *
+ * `generateRecurringDividends` pregenera una ventana de 12 meses al crear la serie,
+ * pero esa ventana no se mueve sola: pasado un año la serie se queda sin entradas y
+ * el Corte Mensual no encuentra nada que cobrar. Esto la empuja hacia adelante.
+ *
+ * Devuelve solo las entradas NUEVAS (no muta el array recibido).
+ */
+export function extendRecurringDividends(
+  dividends: DividendEntry[],
+  throughMonth: string,
+): DividendEntry[] {
+  const seriesIds = new Set(
+    dividends.filter((d) => d.recurring).map((d) => d.recurring!.seriesId),
+  )
+  const added: DividendEntry[] = []
+
+  for (const seriesId of seriesIds) {
+    const entries = dividends.filter((d) => d.recurring?.seriesId === seriesId)
+    // El "último" de la serie define desde dónde seguir
+    let last = entries.reduce((a, b) => (a.month >= b.month ? a : b))
+    if (last.month >= throughMonth) continue
+
+    const { type, expectedAmount } = last.recurring!
+    let month = last.month
+    // Cota de seguridad: nunca más de 120 iteraciones (10 años mensuales)
+    for (let i = 0; i < 120 && month < throughMonth; i++) {
+      month = nextRecurringMonth(month, type)
+      const entry: DividendEntry = {
+        id: crypto.randomUUID(),
+        month,
+        percentage: last.percentage,
+        estimatedGain: expectedAmount ?? last.estimatedGain,
+        recurring: { type, expectedAmount, isGenerated: true, seriesId },
+      }
+      added.push(entry)
+      last = entry
+    }
+  }
+
+  return added
 }
 
 /** Extract boards from raw metadata, migrating legacy tracking and dividends */

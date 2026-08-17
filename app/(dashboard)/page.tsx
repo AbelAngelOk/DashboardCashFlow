@@ -19,6 +19,7 @@ import { useFinance, currentPeriod } from "@/components/finance-store"
 import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialog"
 import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
+import { CutoffBanner } from "@/components/cutoff/cutoff-banner"
 import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
 import { loadGastoGroups, loadIngresoGroups, type FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import type { FinancialRecord } from "@/lib/finance"
@@ -41,6 +42,14 @@ export default function DashboardPage() {
       .then(([g, i]) => { setGastoGroups(g); setIngresoGroups(i) })
       .catch(console.error)
   }, [])
+
+  // Tras un corte cambian registros, snapshots y auditoría: se recarga todo
+  const handleCutoffDone = () => {
+    reload()
+    Promise.all([loadGastoGroups(), loadIngresoGroups()])
+      .then(([g, i]) => { setGastoGroups(g); setIngresoGroups(i) })
+      .catch(console.error)
+  }
 
   const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
     editRecord(record, previous)
@@ -147,14 +156,17 @@ export default function DashboardPage() {
         <div className="inline-block bg-black px-4 py-1 text-white">
           <span className="font-bold">Dashboard</span>
         </div>
-        <Button
-          size="sm"
-          className="gap-2 bg-black text-white hover:bg-gray-800"
-          onClick={openSnapshotDialog}
-        >
-          <Camera className="h-4 w-4" />
-          Tomar Snapshot
-        </Button>
+        <div className="flex items-center gap-2">
+          <CutoffBanner onDone={handleCutoffDone} />
+          <Button
+            size="sm"
+            className="gap-2 bg-black text-white hover:bg-gray-800"
+            onClick={openSnapshotDialog}
+          >
+            <Camera className="h-4 w-4" />
+            Tomar Snapshot
+          </Button>
+        </div>
       </div>
 
       <DashboardSheet

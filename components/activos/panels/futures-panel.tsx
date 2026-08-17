@@ -309,7 +309,6 @@ export function FuturesPanel({ asset }: FuturesPanelProps) {
           open={showNewFutures}
           onOpenChange={setShowNewFutures}
           defaultName={suggestedName}
-          defaultAssetType="FUTURES"
         />
       )}
     </div>

@@ -2,10 +2,11 @@ import { notFound } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft } from "lucide-react"
 import { loadAsset } from "@/lib/assets-actions"
-import { ASSET_TYPE_LABELS } from "@/lib/assets"
+import { AssetTypeLabel } from "@/components/activos/asset-type-label"
 import { AssetInfoSection } from "@/components/activos/asset-info-section"
 import { AssetMovementsSection } from "@/components/activos/asset-movements-section"
 import { AssetDetail } from "@/components/activos/asset-detail"
+import { IncomeRulesSection } from "@/components/activos/income/income-rules-section"
 import { BoardManager } from "@/components/activos/boards/board-manager"
 import { UngroupButton } from "@/components/activos/ungroup-button"
 
@@ -18,8 +19,6 @@ export default async function AssetDetailPage({
   const asset = await loadAsset(id)
 
   if (!asset) notFound()
-
-  const typeLabel = ASSET_TYPE_LABELS[asset.assetType] ?? asset.assetType
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -34,7 +33,10 @@ export default async function AssetDetailPage({
         <div className="inline-block bg-black px-4 py-1">
           <span className="font-bold italic text-white">{asset.name}</span>
         </div>
-        <span className="text-xs font-bold uppercase text-gray-400">{typeLabel}</span>
+        <AssetTypeLabel
+          assetType={asset.assetType}
+          className="text-xs font-bold uppercase text-gray-400"
+        />
         {asset.ticker && (
           <span className="font-mono text-sm text-gray-500">{asset.ticker}</span>
         )}
@@ -62,7 +64,7 @@ export default async function AssetDetailPage({
                 </Link>
               </div>
               <div className="w-32 px-3 py-2 text-xs text-gray-500">
-                {ASSET_TYPE_LABELS[child.assetType] ?? child.assetType}
+                <AssetTypeLabel assetType={child.assetType} />
               </div>
               <div className="w-40 px-3 py-2 text-right font-mono text-sm">
                 {child.amount.toLocaleString("en-US", { minimumFractionDigits: 2 })} {child.currency}
@@ -86,10 +88,17 @@ export default async function AssetDetailPage({
             {/* 2. Panel tipo-específico */}
             <AssetDetail asset={asset} />
 
-            {/* 3. Movimientos */}
+            {/* 3. Ingresos recurrentes — disponible en cualquier tipo de activo */}
+            <IncomeRulesSection
+              recordId={asset.id}
+              assetCurrency={asset.currency}
+              assetAmount={asset.amount}
+            />
+
+            {/* 4. Movimientos */}
             <AssetMovementsSection asset={asset} />
 
-            {/* 4. Tableros opcionales (dividendos + personalizados) */}
+            {/* 5. Tableros opcionales (dividendos + personalizados) */}
             <BoardManager asset={asset} />
           </>
         )}

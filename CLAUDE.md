@@ -35,9 +35,11 @@ After every task, report: docs created/modified with versions, code components c
 ## Commands
 
 ```bash
-npm run dev      # Start dev server at http://localhost:3000
-npm run build    # Production build (also validates pages compile)
+npm run dev      # prisma generate + dev server at http://localhost:3000
+npm run build    # prisma generate + production build (also validates pages compile)
 ```
+
+**After changing `prisma/schema.prisma` you MUST restart the dev server.** `lib/db.ts` caches the client in `global.prisma`, which survives HMR, so a running server keeps a stale client and new models come back `undefined` (`Cannot read properties of undefined (reading 'create')`). Both `dev` and `build` run `prisma generate`, but only a restart picks it up. Schema changes also need `prisma db push` to reach Supabase.
 
 There are no tests. `npm run lint` references ESLint which is not installed — ignore it.
 
@@ -85,12 +87,14 @@ Four record types: `"ingreso"`, `"gasto"`, `"activo"`, `"pasivo"`. Each `Financi
 
 `Snapshot` captures `{ id, name, period, createdAt, records[] }`.
 
-### Asset types (`lib/assets.ts`)
+### Assets: categories + capabilities (`lib/asset-categories.ts`)
 
-`AssetType`: STOCK, BOND, FIXED_TERM, CRYPTO, FUTURES, OPTIONS, TRADING, TRADING_BOT, REBALANCE_BOT, GROUP.
-Each type has a dedicated panel in `components/activos/panels/`. `components/activos/asset-detail.tsx` routes to the correct panel based on `asset.assetType`.
+**There is no asset type enum anymore** (v2.5.0). `AssetType` is a deprecated `string` alias kept only so legacy imports compile.
 
-`GROUP` type is an organizer record that groups children. Groups are collapsible in both `/activos` and the dashboard.
+- **Category** = a free label (`AssetCategory` table, `Record.assetType` holds its id). It determines **nothing**. Managed in `/configuracion`; `AssetCategoriesProvider` loads them and `ensureAssetCategories()` seeds/migrates legacy enum values idempotently on mount.
+- **Capabilities** are what an asset can do. Only `quantity` needs its own column (`Record.tracksQuantity`); the other three are derived — `income` = has `IncomeRule`s, `boards` = has `metadata.boards`, `group` = has children.
+- **`asset-detail.tsx` routes by DATA, never by category.** `metadata.assets[]` → rebalance panel, `metadata.disbursements[]` → bond panel, `metadata.rate + endDate` → fixed-term, `metadata.totalGained` → trading bot, `tracksQuantity` → units panel. This is what let the enum go without migrating any legacy asset's behavior — **do not reintroduce type-based branching.**
+- Groups are collapsible in `/activos` and the dashboard. `isGroupParent` derives from having children, never from a type.
 
 ### Board system (`components/activos/boards/`)
 
@@ -139,6 +143,30 @@ Three parallel layers — do not confuse them:
 
 **RULE: Every new financial function MUST call `createJournalEntry()` from `lib/journal-actions.ts`.** See `docs/financial-domain-architecture.md` for the full operations → accounts mapping.
 
+### Monthly cutoff (`lib/cutoff.ts`, `lib/cutoff-actions.ts`)
+
+Closes a period: archives the outgoing month's ingresos/gastos and prepares the incoming month's. Full spec at `docs/modules/corte-mensual.md`.
+
+- **Period model**: `User.cutoffDay` (1–28, default 1) lives in the DB, NOT localStorage — the server decides eligibility. Period `P` spans day D of month `P` to day D of month `P+1`. `pendingCutoffPeriod()` is the period to close; `currentOpenPeriod()` is the incoming one.
+- **Never runs automatically.** `CutoffBanner` shows a dialog on the dashboard when a period is pending. The button only renders when `status.available` — that is what prevents cutting every day.
+- **`MonthlyCutoff` has `@@unique([userId, period])`** — this is the real guard against a double cutoff. `executeCutoff()` re-validates eligibility server-side; never trust the client.
+- **Obligations**: the cutoff flips the pre-generated `PENDING` gasto to `ACTIVE`. It does NOT mark the ObligationPayment/Installment as `PAID` — accepting stays a manual user action.
+- **Dividends**: the cutoff creates an ingreso for `estimatedGain` and writes its id into `dividend.ingresoRecordId`. `collectDividend()` therefore UPDATES that ingreso instead of creating a second one, and posts a journal entry only for the real-vs-estimated delta. If you touch `collectDividend()`, preserve that reconciliation.
+- **The two marker switches do opposite things on purpose**: keep markers on ingresos/gastos (ephemeral, "pending to review"), clear them on activos/obligaciones (permanent, "already checked this month").
+
+### Income streams (`lib/income-streams.ts`, `lib/income-actions.ts`)
+
+Mirror of the Obligations module: `IncomeRule` + `IncomeOccurrence` hang off a `Record` of type `activo`. Full spec at `docs/modules/flujos-de-ingresos.md`.
+
+- **Any asset type can have income rules** — not just `INCOME_STREAM`. `IncomeRulesSection` is mounted for every non-GROUP asset. `INCOME_STREAM` just exists as a container with presets (Salario / Préstamo / Cuotas / Personalizado) via `buildPresetRules()`.
+- **A rule has four independent axes** (v2.4.0): `installmentCount` (indefinite vs. N finite instalments), `amountMode` (`FIXED` vs. `PERCENTAGE` of asset value), `adjustmentPct`+`adjustEveryN` (compound raise every N collections), and `settlement` (`CASH` vs. `IN_KIND`). `occurrenceAmount()` in `lib/income-streams.ts` resolves the amount; keep it pure and tested.
+- **`reducesPrincipal` is the pivot flag.** Collecting a rule with it set lowers `asset.amount` (floor 0), writes an `EXTRACT` movement, and posts `efectivo / activos` — recovering principal is NOT income. Without it, the entry is `efectivo / ingresos`. `IN_KIND` posts `activos / ingresos` — no cash entered. Never collapse these three cases.
+- **`metadata.valueMode` decides the asset's value semantics.** `PROJECTION` = `amount` is the annual income projection (mirrors how a RECURRING obligation is worth its annual cost); `MANUAL` = the user owns the value. **`MANUAL` is the default and `recalcularIncomeStream()` must never touch a MANUAL asset** — an apartment with a rent rule has its own market value, and deriving this from `reducesPrincipal` would overwrite it.
+- **`computeAnnualProjection()` prefers real occurrences over the formula.** With adjustment, percentage or a finite schedule, `amount × occurrencesPerYear` lies. Only fall back to it when no occurrences exist.
+- **The cutoff activates the PENDING ingreso but leaves the occurrence PENDING** and posts NO journal entry — the real amount is unknown until the user confirms, and the account depends on `reducesPrincipal`. The entry is written in `collectIncomeOccurrence()`.
+- **`updateIncomeRule()` regenerates only PENDING occurrences whose ingreso is still PENDING.** Once a cutoff activated the ingreso it is in the user's current dashboard; rewriting it would move money under their feet.
+- `extendRecurringDividends()` in `lib/assets.ts` pushes recurring dividend series forward at each cutoff; without it the 12-month seed window runs dry and dividends silently stop generating income.
+
 ### Pages
 
 | Route | File | Purpose |
@@ -154,7 +182,7 @@ Three parallel layers — do not confuse them:
 | `/snapshots/[id]` | `app/(dashboard)/snapshots/[id]/page.tsx` | Read-only snapshot view with account balances |
 | `/obligaciones` | `app/(dashboard)/obligaciones/page.tsx` | Obligations list |
 | `/obligaciones/[id]` | `app/(dashboard)/obligaciones/[id]/page.tsx` | Obligation detail |
-| `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Currency settings + configurable asset types |
+| `/configuracion` | `app/(dashboard)/configuracion/page.tsx` | Currency settings + configurable asset types + monthly cutoff day |
 
 ### Component IDs (`data-testid`)
 
@@ -244,4 +272,5 @@ No BoardManager for GROUP type.
 - shadcn/ui (New York style) via `components/ui/` — add new components with `npx shadcn@latest add <component>`
 - Tailwind CSS v4 (configured in `app/globals.css`, not `tailwind.config.js`)
 - Monochrome design: black headers, white backgrounds, `border-2 border-black` for panels — no shadows, no color accents except status badges (emerald/amber/rose)
+- **No rounded corners on form controls.** `input`, `numeric-input`, `textarea`, `select` (trigger/content/items) and `checkbox` are pinned to `rounded-none`. shadcn/ui ships them as `rounded-md`, so when adding a component with `npx shadcn@latest add`, square its corners. Switches keep `rounded-full` on purpose.
 - Path alias `@/` maps to the project root

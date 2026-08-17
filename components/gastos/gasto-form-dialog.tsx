@@ -20,7 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { currencies, type Currency } from "@/lib/finance"
-import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
+import { useAssetCategories } from "@/components/activos/asset-categories-store"
 import { createFreeGasto, createGastoForExistingAsset, createGastoAndNewAsset } from "@/lib/gasto-actions"
 import { useFinance } from "@/components/finance-store"
 import { useSettings } from "@/components/settings-store"
@@ -37,15 +37,13 @@ interface Props {
 export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
   const { records, reload } = useFinance()
   const { settings } = useSettings()
-  const { hiddenAssetTypes = [], customAssetTypes = [] } = settings
+
 
   const activos = records.filter(
     (r): r is FinancialRecord => r.type === "activo" && !r.isGroupParent,
   )
 
-  const visibleSystemTypes = (Object.entries(ASSET_TYPE_LABELS) as [AssetType, string][]).filter(
-    ([type]) => type !== "GROUP" && !hiddenAssetTypes.includes(type),
-  )
+  const { categories } = useAssetCategories()
 
   // ── Shared state ──────────────────────────────────────────────────────────
   const [sourceType, setSourceType] = useState<SourceType>("free")
@@ -59,7 +57,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
 
   // ── Asset nuevo ───────────────────────────────────────────────────────────
   const [assetName, setAssetName] = useState("")
-  const [assetType, setAssetType] = useState<AssetType>("STOCK")
+  const [assetType, setAssetType] = useState<string>("")
 
   const reset = () => {
     setSourceType("free")
@@ -109,7 +107,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
       } else {
         await createGastoAndNewAsset(
           { name: gastoName, amount: amountNum, currency },
-          { name: assetName.trim(), assetType, amount: amountNum, currency },
+          { name: assetName.trim(), assetType: assetType || null, amount: amountNum, currency },
         )
       }
 
@@ -202,17 +200,16 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <Label className="text-xs font-bold uppercase">Tipo de activo</Label>
-                <Select value={assetType} onValueChange={(v) => setAssetType(v as AssetType)}>
+                <Label className="text-xs font-bold uppercase">
+                  Categoría <span className="font-normal text-gray-400">(opcional)</span>
+                </Label>
+                <Select value={assetType} onValueChange={setAssetType}>
                   <SelectTrigger className="border-2 border-black">
-                    <SelectValue />
+                    <SelectValue placeholder="Sin categoría" />
                   </SelectTrigger>
                   <SelectContent>
-                    {visibleSystemTypes.map(([type, label]) => (
-                      <SelectItem key={type} value={type}>{label}</SelectItem>
-                    ))}
-                    {customAssetTypes.map((ct) => (
-                      <SelectItem key={ct.id} value={ct.id}>{ct.name}</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

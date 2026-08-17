@@ -1,6 +1,6 @@
 ---
-Versión: 2.0.0
-Última actualización: 2026-06-30
+Versión: 2.5.0
+Última actualización: 2026-08-17
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -29,7 +29,10 @@ users
   ├──< journal_entries (userId)
   ├──< gasto_ingreso_links (userId)     ← NUEVO
   ├──< markers (userId)                  ← NUEVO
-  └──< entity_markers (userId)           ← NUEVO
+  ├──< entity_markers (userId)           ← NUEVO
+  ├──< monthly_cutoffs (userId)          ← NUEVO v2.2.0
+  ├──< income_rules (userId)             ← NUEVO v2.3.0
+  └──< asset_categories (userId)         ← NUEVO v2.5.0
 
 records
   ├──< records (parentId → self-referencia para grupos)
@@ -80,8 +83,11 @@ Modelo Prisma: `User`
 | `password_hash` | String | No | Hash bcrypt de la contraseña |
 | `created_at` | DateTime | No | Fecha de creación (default: now()) |
 | `updated_at` | DateTime | No | Fecha de última modificación (auto-update) |
+| `cutoff_day` | Int | No | Día del mes (1–28) en que corresponde el corte mensual (default: 1) ← NUEVO v2.2.0 |
 
 **Índices**: `email` (unique)
+
+**Nota sobre `cutoff_day`**: vive en la DB y no en `localStorage` porque el servidor es quien decide si un corte está habilitado. Se limita a 1–28 para que el día exista en todos los meses.
 
 ---
 
@@ -103,7 +109,8 @@ Tabla polimórfica: alberga tanto registros financieros simples (ingresos, gasto
 | `description` | String? | Sí | Descripción larga (usado principalmente en activos) |
 | `operation_date` | DateTime? | Sí | Fecha de la operación (usado principalmente en activos) |
 | `deleted_at` | DateTime? | Sí | Timestamp de soft delete (null = activo) |
-| `asset_type` | String? | Sí | Tipo de activo: `STOCK`, `CRYPTO`, `FUTURES`, `OPTIONS`, `REBALANCE_BOT`, `TRADING_BOT`, `TRADING`, `FIXED_TERM`, `BOND` |
+| `asset_type` | String? | Sí | **Etiqueta**: id de una `asset_categories`. Desde v2.5.0 no determina ningún comportamiento ← MODIFICADO v2.5.0 |
+| `tracks_quantity` | Boolean | No | Capacidad: el activo se opera en unidades (cantidad + precio promedio). Default `false` ← NUEVO v2.5.0 |
 | `ticker` | String? | Sí | Código de cotización (ej: AAPL, BTCUSDT) |
 | `current_quantity` | Decimal(18,8)? | Sí | Cantidad actual de unidades (acciones, crypto, etc.) |
 | `avg_buy_price` | Decimal(18,4)? | Sí | Precio promedio de compra ponderado |
@@ -131,9 +138,11 @@ Tabla polimórfica: alberga tanto registros financieros simples (ingresos, gasto
 - `auditLogs` → `audit_logs[]`
 - `groups` → `record_groups[]`
 
-### Campo `metadata` por tipo de activo
+### Campo `metadata` por forma de activo
 
-El campo `metadata` es un JSON libre. Su estructura varía según `asset_type`:
+El campo `metadata` es un JSON libre. Desde v2.5.0 su forma **ya no depende del tipo** (que es solo una etiqueta): es la propia forma de la metadata la que decide qué panel operativo recibe el activo. Los nombres de abajo son los del modelo anterior, conservados para orientarse.
+
+También puede contener claves transversales: `valueMode` (`PROJECTION` \| `MANUAL`), `boards`, `currencyBreakdown` y `positionTracking`.
 
 **STOCK**:
 ```json
@@ -579,6 +588,127 @@ Asignación de un marcador a una entidad. Constraint `UNIQUE(entity_id, entity_t
 - `entity_id` es String (no FK tipada). Permite apuntar a `records` u `obligations` con el mismo modelo.
 - Al eliminar un marcador, `ON DELETE CASCADE` elimina todos sus `EntityMarker`.
 - Al hacer soft-delete de un record, el `EntityMarker` NO se elimina automáticamente (no hay FK). El marcador permanece en DB aunque el record esté HISTORICAL o con `deletedAt`.
+
+---
+
+## Tabla: `monthly_cutoffs` ← NUEVA v2.2.0
+
+Modelo Prisma: `MonthlyCutoff`
+
+Registro de cada corte mensual ejecutado. Su restricción de unicidad es el mecanismo que impide cortar dos veces el mismo período. Ver [modules/corte-mensual.md](modules/corte-mensual.md).
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por el servidor |
+| `user_id` | String | No | FK a `users.id` |
+| `period` | String | No | `"YYYY-MM"` del período cerrado |
+| `cutoff_day` | Int | No | Día de corte vigente al ejecutarlo (se guarda por si cambia después) |
+| `executed_at` | DateTime | No | Momento de ejecución (default: now()) |
+| `kept_marked` | Boolean | No | Si se conservaron los ingresos/gastos etiquetados |
+| `cleared_entity_markers` | Boolean | No | Si se quitaron las etiquetas de activos y obligaciones |
+| `snapshot_id` | String? | Sí | ID del snapshot tomado antes de archivar, si se pidió |
+| `gastos_archived` | Int | No | Gastos que pasaron a HISTORICAL |
+| `ingresos_archived` | Int | No | Ingresos que pasaron a HISTORICAL |
+| `records_kept` | Int | No | Registros conservados por tener etiqueta |
+| `gastos_generated` | Int | No | Gastos de obligaciones activados para el mes entrante |
+| `ingresos_generated` | Int | No | Ingresos de dividendos creados para el mes entrante |
+| `markers_cleared` | Int | No | Asignaciones de marcador eliminadas |
+
+**Restricciones**: `UNIQUE(user_id, period)` — un período solo puede cortarse una vez.
+
+**Índices**: `(user_id, executed_at)` — para el historial de cortes.
+
+**Notas**:
+- `snapshot_id` no es una FK tipada: si el usuario borra el snapshot, la referencia queda huérfana sin romper el registro del corte.
+- Los contadores son un resumen del impacto; el detalle registro por registro queda en `movements` (auditoría) y `journal_entries` (asientos).
+
+---
+
+## Tablas: `income_rules` e `income_occurrences` ← NUEVAS v2.3.0
+
+Modelos Prisma: `IncomeRule`, `IncomeOccurrence`
+
+Espejo de `ObligationRule` / `ObligationPayment`, pero colgando de un `Record` de tipo `activo`. Ver [modules/flujos-de-ingresos.md](modules/flujos-de-ingresos.md).
+
+### `income_rules`
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por el servidor |
+| `user_id` | String | No | FK a `users.id` |
+| `record_id` | String | No | FK a `records.id` — el activo. `ON DELETE CASCADE` |
+| `name` | String | No | Nombre de la regla (ej: "Sueldo", "Capital", "Interés") |
+| `recurrence_type` | String | No | `MONTHLY` \| `QUARTERLY` \| `SEMI_ANNUAL` \| `ANNUAL` |
+| `start_date` | DateTime | No | Fecha del primer cobro |
+| `expected_amount` | Decimal(18,4) | No | Monto esperado por período |
+| `currency` | String | No | Moneda de la regla — puede diferir de la del activo |
+| `status` | String | No | `ACTIVE` \| `PAUSED` (default: ACTIVE) |
+| `reduces_principal` | Boolean | No | `true` = el cobro descuenta capital del activo (default: false) |
+| `created_at` | DateTime | No | Timestamp de creación |
+| `metadata` | Json? | Sí | Reservado |
+
+**Índices**: `(user_id)`, `(record_id)`
+
+### `income_occurrences`
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | UUID (PK) | No | Generado por el servidor |
+| `user_id` | String | No | FK a `users.id` |
+| `rule_id` | String | No | FK a `income_rules.id`. `ON DELETE CASCADE` |
+| `record_id` | String | No | FK a `records.id` — el activo, desnormalizado para consultas |
+| `expected_date` | DateTime | No | Fecha de vencimiento del cobro |
+| `expected_amount` | Decimal(18,4) | No | Monto esperado |
+| `actual_amount` | Decimal(18,4)? | Sí | Monto realmente cobrado, al confirmar |
+| `currency` | String | No | Moneda |
+| `status` | String | No | `PENDING` \| `COLLECTED` \| `REJECTED` (default: PENDING) |
+| `ingreso_record_id` | String? | Sí | ID del ingreso generado (nace `PENDING`) |
+| `comment` | String? | Sí | Comentario del cobro |
+| `created_at` | DateTime | No | Timestamp de creación |
+
+**Índices**: `(rule_id)`, `(record_id)`, `(user_id, expected_date)`, `(user_id, status)`
+
+**Notas**:
+- `ingreso_record_id` no es FK tipada, igual que `gasto_record_id` en obligaciones.
+- El estado de la ocurrencia y el del ingreso son independientes: el Corte Mensual pasa el ingreso a `ACTIVE` sin mover la ocurrencia de `PENDING`.
+
+---
+
+## Tabla: `asset_categories` ← NUEVA v2.5.0
+
+Modelo Prisma: `AssetCategory`
+
+Etiquetas de activo definidas por el usuario. **Reemplazan al enum `AssetType`**: desde v2.5.0 la categoría no determina ningún comportamiento, solo agrupa visualmente. Ver [releases/v2.5.0.md](releases/v2.5.0.md).
+
+| Campo | Tipo DB | Nullable | Descripción |
+|---|---|---|---|
+| `id` | String (PK) | No | UUID |
+| `user_id` | String | No | FK a `users.id` |
+| `name` | String | No | Nombre visible (ej: "Acciones", "Inmuebles") |
+| `order` | Int | No | Orden en los selectores (default: 0) |
+| `created_at` | DateTime | No | Timestamp de creación |
+
+**Restricciones**: `UNIQUE(user_id, name)` — dos usuarios pueden tener la misma categoría; un mismo usuario no puede duplicarla.
+
+**Índices**: `(user_id)`
+
+**Notas**:
+- `records.asset_type` guarda el `id` de la categoría. No hay FK tipada: eliminar una categoría pone `asset_type = null` en sus activos, nunca borra activos.
+- Los activos creados antes de v2.5.0 guardaban valores del enum (`STOCK`, `BOND`…). `ensureAssetCategories()` los convierte en categorías y reapunta los registros en la primera carga.
+- `GROUP` **no** se convierte en categoría: agrupar es una capacidad estructural que se deriva de tener hijos.
+
+---
+
+## Capacidades de un activo ← NUEVO v2.5.0
+
+Lo que antes venía atado al tipo, ahora se configura por activo. Solo una necesitó columna propia; las demás se derivan de datos que ya existían:
+
+| Capacidad | Cómo se persiste |
+|---|---|
+| Se opera en unidades | `records.tracks_quantity` |
+| Genera ingresos recurrentes | Tener filas en `income_rules` |
+| Tableros de seguimiento | Tener `metadata.boards` |
+| Agrupa otros activos | Tener hijos vía `records.parent_id` |
 
 ---
 

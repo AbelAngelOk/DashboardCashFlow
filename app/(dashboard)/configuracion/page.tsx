@@ -1,9 +1,8 @@
 "use client"
 
 import { useState } from "react"
-import { Settings2, RefreshCw, Plus, Pencil, Trash2, Check, X, Eye, EyeOff } from "lucide-react"
+import { Settings2, RefreshCw } from "lucide-react"
 import { currencies, type Currency } from "@/lib/finance"
-import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
 import { useSettings } from "@/components/settings-store"
 import {
   Select,
@@ -14,6 +13,8 @@ import {
 } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
 import { MarkerManagerDialog } from "@/components/markers/marker-manager-dialog"
+import { AssetCategoriesSettings } from "@/components/activos/asset-categories-settings"
+import { CutoffSettings } from "@/components/cutoff/cutoff-settings"
 
 function SwitchRow({
   label,
@@ -52,11 +53,6 @@ function SwitchRow({
   )
 }
 
-// System asset types (excluding GROUP, which is internal)
-const SYSTEM_TYPES = (Object.keys(ASSET_TYPE_LABELS) as AssetType[]).filter(
-  (t) => t !== "GROUP",
-)
-
 export default function ConfiguracionPage() {
   const {
     settings,
@@ -64,10 +60,6 @@ export default function ConfiguracionPage() {
     updateRate,
     fetchExchangeRates,
     fetchingRates,
-    toggleHideAssetType,
-    addCustomAssetType,
-    renameCustomAssetType,
-    removeCustomAssetType,
   } = useSettings()
 
   const {
@@ -76,35 +68,12 @@ export default function ConfiguracionPage() {
     showConvertedAmounts,
     exchangeRates,
     ratesLastUpdated,
-    hiddenAssetTypes,
-    customAssetTypes,
   } = settings
 
   const otherCurrencies = currencies.filter((c) => c !== baseCurrency)
 
   // Custom type UI state
-  const [newTypeName, setNewTypeName] = useState("")
-  const [editingTypeId, setEditingTypeId] = useState<string | null>(null)
-  const [editingTypeName, setEditingTypeName] = useState("")
   const [markerManagerOpen, setMarkerManagerOpen] = useState(false)
-
-  const handleAddCustomType = () => {
-    if (!newTypeName.trim()) return
-    addCustomAssetType(newTypeName.trim())
-    setNewTypeName("")
-  }
-
-  const startRenameCustom = (id: string, name: string) => {
-    setEditingTypeId(id)
-    setEditingTypeName(name)
-  }
-
-  const saveRenameCustom = () => {
-    if (editingTypeId && editingTypeName.trim()) {
-      renameCustomAssetType(editingTypeId, editingTypeName.trim())
-    }
-    setEditingTypeId(null)
-  }
 
   return (
     <div className="mx-auto max-w-xl">
@@ -225,92 +194,9 @@ export default function ConfiguracionPage() {
         </div>
       </div>
 
-      {/* ── Tipos de Activo section ───────────────────────────────── */}
-      <div className="mt-8 border-2 border-black">
-        <div className="border-b-2 border-black bg-black px-4 py-2">
-          <span className="text-sm font-bold uppercase tracking-wide text-white">
-            Tipos de Activo
-          </span>
-        </div>
-
-        <div className="p-4">
-          <p className="mb-4 text-xs text-gray-500">
-            Los tipos ocultos no aparecen en los selectores de la app. No se pueden eliminar los tipos del sistema.
-          </p>
-
-          {/* System types */}
-          <div className="mb-4 flex flex-col gap-1">
-            <p className="mb-2 text-xs font-bold uppercase text-gray-400">Tipos del sistema</p>
-            {SYSTEM_TYPES.map((type) => {
-              const isHidden = (hiddenAssetTypes ?? []).includes(type)
-              return (
-                <div
-                  key={type}
-                  className={`flex items-center justify-between rounded border px-3 py-2 text-sm ${isHidden ? "border-gray-200 bg-gray-50 text-gray-400" : "border-gray-300"}`}
-                >
-                  <span className={isHidden ? "line-through" : ""}>{ASSET_TYPE_LABELS[type]}</span>
-                  <button
-                    onClick={() => toggleHideAssetType(type)}
-                    className="text-gray-400 hover:text-black"
-                    title={isHidden ? "Mostrar tipo" : "Ocultar tipo"}
-                  >
-                    {isHidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                  </button>
-                </div>
-              )
-            })}
-          </div>
-
-          {/* Custom types */}
-          <div className="flex flex-col gap-1">
-            <p className="mb-2 text-xs font-bold uppercase text-gray-400">Tipos personalizados</p>
-            {(customAssetTypes ?? []).map((ct) => (
-              <div
-                key={ct.id}
-                className="flex items-center justify-between gap-2 rounded border border-gray-300 px-3 py-2 text-sm"
-              >
-                {editingTypeId === ct.id ? (
-                  <>
-                    <Input
-                      value={editingTypeName}
-                      onChange={(e) => setEditingTypeName(e.target.value)}
-                      onKeyDown={(e) => { if (e.key === "Enter") saveRenameCustom(); if (e.key === "Escape") setEditingTypeId(null) }}
-                      className="h-6 flex-1 border border-gray-300 text-sm focus-visible:ring-0"
-                      autoFocus
-                    />
-                    <button onClick={saveRenameCustom} className="text-emerald-700 hover:text-emerald-900"><Check className="h-4 w-4" /></button>
-                    <button onClick={() => setEditingTypeId(null)} className="text-gray-400 hover:text-black"><X className="h-4 w-4" /></button>
-                  </>
-                ) : (
-                  <>
-                    <span className="flex-1">{ct.name}</span>
-                    <button onClick={() => startRenameCustom(ct.id, ct.name)} className="text-gray-400 hover:text-black"><Pencil className="h-3.5 w-3.5" /></button>
-                    <button onClick={() => removeCustomAssetType(ct.id)} className="text-gray-400 hover:text-rose-700"><Trash2 className="h-3.5 w-3.5" /></button>
-                  </>
-                )}
-              </div>
-            ))}
-
-            {/* Add custom type */}
-            <div className="mt-2 flex gap-2">
-              <Input
-                value={newTypeName}
-                onChange={(e) => setNewTypeName(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleAddCustomType()}
-                placeholder="Nombre del nuevo tipo..."
-                className="h-8 flex-1 border-2 border-black text-sm focus-visible:ring-0"
-              />
-              <button
-                onClick={handleAddCustomType}
-                disabled={!newTypeName.trim()}
-                className="flex items-center gap-1 border-2 border-black bg-black px-3 py-1 text-xs text-white hover:bg-gray-800 disabled:opacity-40"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Agregar
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* ── Categorías de Activo ─────────────────────────────────── */}
+      <div className="mt-8">
+        <AssetCategoriesSettings />
       </div>
 
       {/* Marcadores */}
@@ -330,6 +216,8 @@ export default function ConfiguracionPage() {
           </button>
         </div>
       </div>
+
+      <CutoffSettings />
 
       <MarkerManagerDialog open={markerManagerOpen} onOpenChange={setMarkerManagerOpen} />
     </div>
