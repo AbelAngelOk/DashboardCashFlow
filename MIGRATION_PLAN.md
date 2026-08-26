@@ -1,10 +1,10 @@
 # MIGRATION_PLAN.md — De Next.js/React a HTML + CSS + JS vanilla
 
 ---
-Versión: 1.7.0
+Versión: 2.0.0
 Última actualización: 2026-08-25
 Autor: Abel Cejas
-Estado: Activo — Fase 4 completa, Fase 5 (Limpieza) completa — sigue Fase 6 (Auditoría de rendimiento)
+Estado: Completo — Fases 1 a 6 del plan original cerradas
 ---
 
 > Requisito previo: leer [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -790,8 +790,54 @@ Segundo lote, tratado aparte por ser el de mayor riesgo: `public/app/**` deja de
 | `/js/auth.js`, `/js/pages/login.js`, `/js/pages/register.js`, `/js/api.js` (imports de módulos ES desde los HTML de auth) | ✅ 200 |
 | Limpieza del usuario de prueba | ✅ Eliminado; 3 usuarios reales confirmados intactos |
 
-### Pendiente dentro de la Fase 5
+## Fase 5 — completa
 
-- Commit de este lote.
+Con el movimiento de `/app` a la raíz se cierra la Fase 5. Queda solo la Fase 6 del plan original.
 
-**Quedan las Fases 5 y 6 del plan original** (ver §6 más arriba): Fase 5 — Limpieza (retirar `app/(dashboard)/**`, `components/**` no reusado, React, Radix, TipTap y las dependencias huérfanas; mover `/app` a la raíz) y Fase 6 — Auditoría de rendimiento (FCP/LCP/TBT, tamaño de bundle, tabla de requests por pantalla). Ninguna de las dos se abordó todavía.
+## Fase 6 — Auditoría de rendimiento · **completa**
+
+Medición antes/después real, no estimada. Metodología: la versión "antes" no convive con la nueva en el mismo checkout (Fase 5 ya borró `app/(dashboard)/**` y `components/**`), así que se resucitó temporalmente en un **git worktree** apuntando al último commit puramente React (`6bdeeda`, padre directo del squash `705490c` que introdujo la capa API + frontend vanilla). Ambas versiones corrieron en paralelo, en modo producción (`next build && next start`), contra la **misma base de datos**, con un usuario descartable sembrado con 16 records (7 gastos, 4 ingresos, 5 activos) para que ninguna pantalla se midiera vacía.
+
+**Herramienta**: `puppeteer-core` (solo el driver, sin Chromium propio — apunta al Chrome ya instalado en la máquina) pilotando el mismo navegador contra los dos puertos (`:3002` viejo, `:3000` nuevo). La cookie de sesión de NextAuth no está scopeada por puerto (los cookies no distinguen puerto per RFC 6265), así que un solo login sirvió para autenticar contra ambas versiones. Métricas leídas de la Performance API real del navegador (`paint`, `navigation`, `PerformanceObserver` para LCP vía `largest-contentful-paint` y TBT vía `longtask`) más bytes reales de red por `Network.loadingFinished` (CDP) — nada estimado ni extrapolado.
+
+**Aclaración honesta sobre el alcance.** Todo corrió en localhost, en la misma máquina, sin throttling de red ni CPU — así que los milisegundos absolutos de FCP/LCP no representan la experiencia de un usuario real en producción (ahí las diferencias serían mayores, no menores: más aún con latencia de red real, la ventaja de menos requests y menos bytes se amplifica). Los deltas *relativos* y los bytes/requests contados sí son datos duros, no estimaciones.
+
+### Resultados
+
+| Pantalla | Métrica | Antes (React) | Después (vanilla) | Δ |
+|---|---|---|---|---|
+| `/login` | Bytes transferidos | 261 300 | 8 427 | **−97 %** |
+| | Requests | 25 | 7 | −72 % |
+| | LCP | 160 ms | 36 ms | −78 % |
+| | Nodos DOM | 51 | 23 | −55 % |
+| `/` (Dashboard) | Bytes transferidos | 393 190 | 72 087 | **−82 %** |
+| | Requests | 79 | 36 | −54 % |
+| | LCP | 2680 ms | 1044 ms | −61 % |
+| | Nodos DOM | 814 | 636 | −22 % |
+| `/activos` | Bytes transferidos | 390 401 | 55 812 | **−86 %** |
+| | Requests | 58 | 26 | −55 % |
+| | LCP | 864 ms | 488 ms | −44 % |
+| | Nodos DOM | 349 | 287 | −18 % |
+| `/historial` | Bytes transferidos | 389 564 | 40 373 | **−90 %** |
+| | Requests | 49 | 18 | −63 % |
+| | LCP | 872 ms | 636 ms | −27 % |
+| | Nodos DOM | 344 | 337 | −2 % |
+| TBT (las 4 pantallas) | — | 0 ms | 0 ms | sin diferencia medible en esta máquina sin throttling — ver aclaración arriba |
+
+**Lectura del patrón.** Los bytes transferidos de la versión React son casi idénticos entre `/` (393 KB), `/activos` (390 KB) y `/historial` (390 KB) — la firma exacta de un bundle de framework compartido (React + Radix + TipTap + el resto del árbol de `components/ui`) que se re-descarga en cada navegación completa, dominando por sobre el código propio de cada pantalla. La versión vanilla no tiene ese piso: cada ruta pesa lo que sus módulos JS específicos pesan (72 KB → 55 KB → 40 KB, decreciente con la complejidad real de cada pantalla), sin una "cuota de entrada" fija. Esto es exactamente el problema que motivó la migración (P4/P7 de `ARCHITECTURE.md`) confirmado con datos, no solo con la cuenta de dependencias.
+
+**Dependencias**: 70 → 10 en runtime (Fase 5). `node_modules` instalado: 370 paquetes en la versión vieja vs. 156 en la nueva (de la instalación registrada en el lote de limpieza).
+
+**Build**: la versión vieja compila con Turbopack pero no imprime la tabla clásica de "First Load JS" por ruta (formato de salida cambiado en esta versión de Next); se midieron bytes reales de red en vez de inferir del build manifest, que resulta un dato más fiel de todos modos (captura compresión de transporte real, no el tamaño del archivo en disco).
+
+### Verificación ejecutada / higiene del entorno de prueba
+
+| Check | Resultado |
+|---|---|
+| Worktree en `6bdeeda`, `npm install` + `npm run build` + `npm start` en puerto 3002 | ✅ Levantó sin tocar el checkout principal |
+| Usuario descartable + 16 records sembrados vía API, cookie de sesión válida contra ambos puertos | ✅ Confirmado con `/api/bootstrap` (nuevo) y `200` en `/` (viejo) |
+| Limpieza del usuario de prueba (categoría + records + audit log + user) | ✅ Eliminado; 3 usuarios reales confirmados intactos |
+| `git worktree remove --force ../DashboardCashFlow-before` | ✅ Worktree eliminado, `git worktree list` solo muestra el checkout principal |
+| `git status` en el checkout principal tras toda la prueba | ✅ Limpio — la auditoría no dejó cambios de código, solo el informe en este archivo |
+
+## Fase 6 — completa. Plan original (§4, Fases 1–6) cerrado en su totalidad.
