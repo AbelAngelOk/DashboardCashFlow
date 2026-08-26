@@ -1,5 +1,5 @@
-import { login, getSession } from "/app/js/auth.js"
-import { apiPost, ApiError, NetworkError } from "/app/js/api.js"
+import { login, getSession } from "/js/auth.js"
+import { apiPost, ApiError, NetworkError } from "/js/api.js"
 
 const form = document.getElementById("register-form")
 const errorEl = document.getElementById("error")
@@ -19,7 +19,7 @@ function setLoading(loading) {
 }
 
 getSession().then((session) => {
-  if (session) window.location.href = "/app"
+  if (session) window.location.href = "/"
 })
 
 form.addEventListener("submit", async (e) => {
@@ -45,7 +45,7 @@ form.addEventListener("submit", async (e) => {
       showError("Registro exitoso pero el login falló. Intentá iniciar sesión.")
       return
     }
-    window.location.href = "/app"
+    window.location.href = "/"
   } catch (err) {
     if (err instanceof ApiError) showError(err.message)
     else if (err instanceof NetworkError) showError(err.message)

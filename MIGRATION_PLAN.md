@@ -1,10 +1,10 @@
 # MIGRATION_PLAN.md — De Next.js/React a HTML + CSS + JS vanilla
 
 ---
-Versión: 1.6.0
+Versión: 1.7.0
 Última actualización: 2026-08-25
 Autor: Abel Cejas
-Estado: Activo — Fase 4 completa, Fase 5 (Limpieza) primer lote completo — falta mover /app a la raíz
+Estado: Activo — Fase 4 completa, Fase 5 (Limpieza) completa — sigue Fase 6 (Auditoría de rendimiento)
 ---
 
 > Requisito previo: leer [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -760,9 +760,38 @@ Primer lote de limpieza: borrado de todo lo que quedó huérfano al terminar la 
 | Sin sesión | (no re-verificado en este lote — ya cubierto en la verificación de Fase 4 Dashboard) |
 | Limpieza del usuario de prueba (categoría + record + audit log + user) | ✅ Eliminado vía script puntual con el mismo adapter (`@prisma/adapter-pg`) que usa `lib/db.ts`; 3 usuarios reales confirmados intactos después |
 
+### Fase 5 — mover `/app` a la raíz · **completa**
+
+Segundo lote, tratado aparte por ser el de mayor riesgo: `public/app/**` deja de vivir bajo un prefijo y pasa a ser la raíz del sitio. `/activos`, `/gastos/:id`, `/` en vez de `/app/activos`, etc.
+
+**Movimientos (`git mv`, preserva historia):** `public/app/{css,js}` → `public/{css,js}`, `public/app/{index,login,register}.html` → `public/{index,login,register}.html`. El directorio `public/app/` queda vacío y se borra.
+
+**Reescritura de rutas hardcodeadas** en los 22 archivos que las tenían (`api.js`, `router.js`, `shell.js`, y ~19 `pages/*.js`/`components/*.js` con links `data-link`): `/app/` → `/`, y el caso especial de `/app` "pelado" (sin barra final: el href del Dashboard, `MIGRATED_PATHS`, los `window.location.href` de login/register) → `/`.
+
+**Incidente durante el reemplazo masivo, corregido antes de seguir.** El primer intento uso `Get-Content -Raw` / `Set-Content -Encoding utf8` de PowerShell para el reemplazo — PowerShell 5.1 decodificó mal el UTF-8 de entrada y produjo mojibake (`está` → `estÃ¡`) en 19 de los 22 archivos. Detectado por revisión de diff antes de cualquier commit, revertido con `git checkout -- public/` (que también deshizo, de paso, la simplificación ya aplicada a `router.js`, reaplicada después) y rehecho con un script Node.js (`fs.readFileSync/writeFileSync` con `"utf8"` explícito), que no tiene ese problema. Verificado con `grep -rl 'Ã'` que no quedó mojibake y con `xxd` que ningún archivo quedó con BOM.
+
+**`router.js` simplificado.** `normalizedPath()` ya no necesita despojar un prefijo `/app` (tres formas de llegar a la raíz reducidas a una: `location.pathname`, más el caso de `/index.html` explícito). El resaltado de link activo en `render()` perdió su rama especial para hrefs que empezaban con `/app`.
+
+**`next.config.mjs` — no un rewrite plano, sino `fallback`.** El rewrite anterior (`/app/:path*` → `/app/index.html`) podía vivir como array plano porque estaba scopeado a un prefijo que nunca colisionaba con `/api/**`. Un rewrite plano equivalente en la raíz (`/:path*` → `/index.html`) sí colisionaría: según el orden de resolución de Next, un rewrite "afterFiles" (que es lo que es un array plano) se evalúa **antes** que las rutas dinámicas de `app/api/**`, así que `/api/assets/[id]` quedaría tapado. La categoría `fallback` (forma de objeto: `{ fallback: [...] }`) es justamente el patrón que la documentación de Next.js recomienda para este caso — se evalúa **después** de archivos estáticos y de rutas dinámicas, solo entra en juego si nada más matcheó. Verificado explícitamente contra una ruta con 2 parámetros dinámicos anidados (`/api/obligations/:id/rules/:ruleId/pause`) sin sesión: devolvió `401 application/json`, no el HTML del fallback.
+
+### Verificación ejecutada
+
+| Check | Resultado |
+|---|---|
+| `grep -rl 'Ã'` (mojibake) y `xxd` (BOM) sobre los 22 archivos tocados | ✅ Ninguno |
+| `tsc --noEmit` | ✅ Sin errores |
+| `npm run build` limpio tras el rm -rf .next | ✅ |
+| `/`, `/login.html`, `/register.html`, `/js/shell.js`, `/css/base.css` | ✅ 200, tipos correctos |
+| Deep links sin recarga real: `/activos`, `/activos/some-id`, `/obligaciones/uuid-fake`, incluso `/app` (ya no es un prefijo especial, cae al mismo fallback) | ✅ 200, sirve `index.html` |
+| **Crítico** — `/api/bootstrap` sin sesión | ✅ `401 {"error":"No autorizado"}`, no HTML |
+| **Crítico** — `/api/assets/fake-id` (1 param dinámico) sin sesión | ✅ `401 application/json` |
+| **Crítico** — `/api/obligations/fake-id/rules/fake-rule/pause` (2 params dinámicos anidados) sin sesión | ✅ `401 application/json` — confirma que `fallback` no tapa ni las rutas dinámicas más profundas |
+| Flujo real con usuario descartable (`fase5move-smoketest-*`): registro → login → `/api/auth/session` → `/api/bootstrap` con cookie | ✅ Los 4 pasos, todos contra rutas de la raíz nueva |
+| `/js/auth.js`, `/js/pages/login.js`, `/js/pages/register.js`, `/js/api.js` (imports de módulos ES desde los HTML de auth) | ✅ 200 |
+| Limpieza del usuario de prueba | ✅ Eliminado; 3 usuarios reales confirmados intactos |
+
 ### Pendiente dentro de la Fase 5
 
-- Mover `public/app/**` a la raíz del sitio y actualizar los ~20 archivos con `/app/` hardcodeado (`api.js`, varios `pages/*.js`, `router.js`, `shell.js`) + las reglas de rewrite en `next.config.mjs`. Tratado como su propio paso, de mayor riesgo — no arrancado todavía.
 - Commit de este lote.
 
 **Quedan las Fases 5 y 6 del plan original** (ver §6 más arriba): Fase 5 — Limpieza (retirar `app/(dashboard)/**`, `components/**` no reusado, React, Radix, TipTap y las dependencias huérfanas; mover `/app` a la raíz) y Fase 6 — Auditoría de rendimiento (FCP/LCP/TBT, tamaño de bundle, tabla de requests por pantalla). Ninguna de las dos se abordó todavía.

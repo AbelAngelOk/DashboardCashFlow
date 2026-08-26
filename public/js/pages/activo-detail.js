@@ -57,7 +57,7 @@ export async function render(main, params) {
 
     // Header
     const header = el("div", { class: "obl-detail-header" })
-    const backLink = el("a", { href: "/app/activos", "data-link": "", class: "obl-back-link" })
+    const backLink = el("a", { href: "/activos", "data-link": "", class: "obl-back-link" })
     backLink.appendChild(svgIcon("icon-arrow-right", 14))
     backLink.firstChild.style.transform = "rotate(180deg)"
     backLink.appendChild(document.createTextNode(" Activos"))
@@ -79,7 +79,7 @@ export async function render(main, params) {
       for (const child of asset.children) {
         const row = el("div", { class: "obl-rule-row" })
         const nameCol = el("div", { style: "flex:1;" })
-        const link = el("a", { href: `/app/activos/${child.id}`, "data-link": "", style: "font-weight:500; text-decoration:none; color:inherit;" }, child.name)
+        const link = el("a", { href: `/activos/${child.id}`, "data-link": "", style: "font-weight:500; text-decoration:none; color:inherit;" }, child.name)
         nameCol.appendChild(link)
         row.appendChild(nameCol)
         row.appendChild(el("div", { style: "width:8rem; font-size:0.75rem; color:var(--gray-500);" }, categoryName(child.assetType, categories)))
@@ -121,7 +121,7 @@ export async function render(main, params) {
         const yesBtn = el("button", { style: "font-weight:bold; color:#be123c; border:none; background:none;" }, "Sí")
         yesBtn.addEventListener("click", async () => {
           await apiPost(`/api/assets/${id}/ungroup`)
-          navigate("/app/activos")
+          navigate("/activos")
         })
         const noBtn = el("button", { style: "color:var(--gray-500); border:none; background:none;" }, "No")
         noBtn.addEventListener("click", () => { confirming = false; paintBtn() })

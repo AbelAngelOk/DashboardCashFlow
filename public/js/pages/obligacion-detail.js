@@ -33,7 +33,7 @@ export async function render(main, params) {
     clear(wrap)
 
     const header = el("div", { class: "obl-detail-header" })
-    const backLink = el("a", { href: "/app/obligaciones", "data-link": "", class: "obl-back-link" })
+    const backLink = el("a", { href: "/obligaciones", "data-link": "", class: "obl-back-link" })
     backLink.appendChild(svgIcon("icon-arrow-right", 14))
     backLink.firstChild.style.transform = "rotate(180deg)"
     backLink.appendChild(document.createTextNode(" Obligaciones"))
@@ -569,7 +569,7 @@ export async function render(main, params) {
       try {
         await apiPost(`/api/obligations/${id}/finalize`, { generateExpenses: hasPending && generateExpenses })
         dialog.close()
-        navigate("/app/obligaciones")
+        navigate("/obligaciones")
       } finally {
         loading = false
       }

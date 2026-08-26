@@ -226,9 +226,9 @@ export function renderSectionTable(opts) {
       })
       actionsCell.appendChild(markerBtn)
 
-      if (isActivo) actionsCell.appendChild(viewLink(`/app/activos/${record.id}`))
-      if (type === "ingreso") actionsCell.appendChild(viewLink(`/app/ingresos/${record.id}`))
-      if (type === "gasto") actionsCell.appendChild(viewLink(`/app/gastos/${record.id}`))
+      if (isActivo) actionsCell.appendChild(viewLink(`/activos/${record.id}`))
+      if (type === "ingreso") actionsCell.appendChild(viewLink(`/ingresos/${record.id}`))
+      if (type === "gasto") actionsCell.appendChild(viewLink(`/gastos/${record.id}`))
 
       if (indented) {
         // hijo de grupo: editar y (si activo) poner en cero

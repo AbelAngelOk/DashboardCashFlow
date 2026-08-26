@@ -2,7 +2,7 @@ import type { Metadata } from "next"
 import { Analytics } from "@vercel/analytics/next"
 
 // Next.js exige un layout raíz aunque no quede ningún page.tsx bajo app/ —
-// toda la UI real vive en public/app/** (HTML/CSS/JS vanilla). Este layout
+// toda la UI real vive en public/** (HTML/CSS/JS vanilla). Este layout
 // solo importa lo mínimo que Next necesita para compilar; ya no depende de
 // componentes de React (todos removidos en la Fase 5 de MIGRATION_PLAN.md).
 export const metadata: Metadata = {

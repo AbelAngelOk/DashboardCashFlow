@@ -7,16 +7,15 @@ const nextConfig = {
     unoptimized: true,
   },
   async rewrites() {
-    return [
-      // El frontend vanilla es una SPA servida como estáticos desde public/app/.
-      // Next.js resuelve public/ ANTES que los rewrites, así que esta regla solo
-      // se dispara para rutas que no son un archivo real (/app, /app/activos,
-      // /app/gastos...) — nunca pisa css/js/html existentes. Es el equivalente
-      // a un `try_files $uri /index.html` de nginx: deja que el router de
-      // router.js decida qué pantalla mostrar a partir de la URL.
-      { source: "/app", destination: "/app/index.html" },
-      { source: "/app/:path*", destination: "/app/index.html" },
-    ]
+    // El frontend vanilla es una SPA servida como estáticos desde public/.
+    // `fallback` (a diferencia de un rewrite plano) se evalúa DESPUÉS de
+    // archivos estáticos Y de las rutas dinámicas de app/api/**, así que
+    // nunca puede pisar /api/assets/[id] ni similares — solo entra en juego
+    // cuando nada más matcheó. Es el equivalente a `try_files $uri /index.html`
+    // de nginx: deja que router.js decida qué pantalla mostrar según la URL.
+    return {
+      fallback: [{ source: "/:path*", destination: "/index.html" }],
+    }
   },
 }
 

@@ -4,7 +4,7 @@
 // MIGRATION_PLAN.md: sin responsive, sin breakpoints), así que esa segunda
 // variante no tiene sentido acá.
 //
-// El detalle (/app/snapshots/:id) ya está migrado (reusa dashboard-sheet.js
+// El detalle (/snapshots/:id) ya está migrado (reusa dashboard-sheet.js
 // en modo readOnly, construido para el Dashboard en vivo) — ver snapshot-detail.js.
 
 import { apiGet, ApiError, NetworkError } from "../api.js"
@@ -48,7 +48,7 @@ export async function render(main) {
       row.appendChild(el("div", { class: "snap-col-period" }, snap.period))
       row.appendChild(el("div", { class: "snap-col-date" }, snap.createdAt))
       const actionCell = el("div", { class: "snap-col-action" })
-      const link = el("a", { href: `/app/snapshots/${snap.id}`, "data-link": "", "aria-label": `Ver snapshot ${snap.name}` })
+      const link = el("a", { href: `/snapshots/${snap.id}`, "data-link": "", "aria-label": `Ver snapshot ${snap.name}` })
       link.appendChild(svgIcon("icon-arrow-right"))
       actionCell.appendChild(link)
       row.appendChild(actionCell)

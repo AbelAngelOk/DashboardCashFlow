@@ -45,7 +45,7 @@ function writeStateToURL(state) {
   sp.set("page", String(state.page))
   sp.set("pageSize", String(state.pageSize))
   const qs = sp.toString()
-  history.replaceState({}, "", `/app/historial${qs ? `?${qs}` : ""}`)
+  history.replaceState({}, "", `/historial${qs ? `?${qs}` : ""}`)
 }
 
 function isFiltered(state) {

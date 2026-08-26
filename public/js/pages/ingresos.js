@@ -17,7 +17,7 @@ const SOURCE_TYPE_LABELS = {
 
 function sourceBadge(source) {
   if (source.type === "asset") {
-    const link = el("a", { href: `/app/activos/${source.assetId}`, "data-link": "", class: "source-badge source-badge-emerald" })
+    const link = el("a", { href: `/activos/${source.assetId}`, "data-link": "", class: "source-badge source-badge-emerald" })
     link.appendChild(el("span", { class: "source-badge-tag" }, SOURCE_TYPE_LABELS[source.sourceType] ?? source.sourceType))
     link.appendChild(document.createTextNode(source.assetName))
     link.appendChild(svgIcon("icon-arrow-right", 10))

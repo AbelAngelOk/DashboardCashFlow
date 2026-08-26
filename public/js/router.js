@@ -34,13 +34,11 @@ let current = null // función de limpieza de la página activa, si la define
 
 /**
  * Reduce location.pathname a la ruta "logica" que registran las paginas.
- * Cubre las tres formas de llegar a la raiz del shell: /app, /app/, y
- * /app/index.html (el archivo real detras del rewrite de next.config.mjs).
+ * Cubre /index.html (el archivo real detras del fallback de next.config.mjs)
+ * ademas de la ruta limpia.
  */
 function normalizedPath() {
-  let p = location.pathname
-  if (p.startsWith("/app")) p = p.slice(4)
-  p = p.replace(/\/index\.html$/, "")
+  const p = location.pathname.replace(/\/index\.html$/, "")
   return p || "/"
 }
 
@@ -59,14 +57,8 @@ async function render() {
 
   const mod = await found.load()
   current = await mod.render(main, found.params)
-  // Compara rutas NORMALIZADAS, no location.pathname crudo: un link con
-  // href="/app" debe marcarse activo incluso si el usuario llego via
-  // /app/index.html (misma pagina, distinta forma de la URL).
   document.querySelectorAll("[data-nav-link]").forEach((a) => {
-    const hrefPath = a.getAttribute("href").startsWith("/app")
-      ? a.getAttribute("href").slice(4) || "/"
-      : a.getAttribute("href")
-    a.classList.toggle("active", hrefPath === path)
+    a.classList.toggle("active", a.getAttribute("href") === path)
   })
 }
 

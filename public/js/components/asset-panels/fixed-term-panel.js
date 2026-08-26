@@ -106,7 +106,7 @@ function openCollectDialog(asset, expectedReturn) {
       currency: asset.currency, assetName: asset.name,
     })
     dialog.close()
-    navigate("/app/activos")
+    navigate("/activos")
   }
 
   dialog.addEventListener("close", () => dialog.remove(), { once: true })

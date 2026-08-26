@@ -55,7 +55,7 @@ export async function render(main) {
   newBtn.appendChild(svgIcon("icon-plus", 12))
   newBtn.appendChild(document.createTextNode(" Nueva"))
   newBtn.addEventListener("click", () => {
-    openObligationFormDialog({ onCreated: (id) => navigate(`/app/obligaciones/${id}`) })
+    openObligationFormDialog({ onCreated: (id) => navigate(`/obligaciones/${id}`) })
   })
   header.appendChild(newBtn)
   wrap.appendChild(header)
@@ -101,7 +101,7 @@ export async function render(main) {
         class: "obl-row",
         style: marker ? `border-left:4px solid ${marker.color}; background-color:${marker.color}18;` : "",
       })
-      const link = el("a", { href: `/app/obligaciones/${o.id}`, "data-link": "", class: "obl-row-link" })
+      const link = el("a", { href: `/obligaciones/${o.id}`, "data-link": "", class: "obl-row-link" })
       link.appendChild(el("div", { style: "flex:1; padding:0.5rem 0.75rem; font-weight:500;" }, o.name))
       link.appendChild(el("div", { class: "obl-col-type" }, OBLIGATION_TYPE_LABELS[o.obligationType]))
       const valueCol = el("div", { class: "obl-col-value" })

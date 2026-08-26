@@ -27,7 +27,7 @@ export async function render(main, params) {
   clear(wrap)
 
   if (!snapshot) {
-    const backLink = el("a", { href: "/app/snapshots", "data-link": "", class: "obl-back-link" })
+    const backLink = el("a", { href: "/snapshots", "data-link": "", class: "obl-back-link" })
     backLink.appendChild(svgIcon("icon-arrow-right", 14))
     backLink.firstChild.style.transform = "rotate(180deg)"
     backLink.appendChild(document.createTextNode(" Snapshots"))
@@ -41,7 +41,7 @@ export async function render(main, params) {
 
   const header = el("div", { style: "display:flex; align-items:center; justify-content:space-between; border-bottom:2px solid var(--black); padding-bottom:0.5rem; margin-bottom:1rem; flex-wrap:wrap; gap:0.5rem;" })
   const left = el("div", { style: "display:flex; align-items:center; gap:0.75rem;" })
-  const backLink = el("a", { href: "/app/snapshots", "data-link": "", class: "obl-back-link" })
+  const backLink = el("a", { href: "/snapshots", "data-link": "", class: "obl-back-link" })
   backLink.appendChild(svgIcon("icon-arrow-right", 14))
   backLink.firstChild.style.transform = "rotate(180deg)"
   left.appendChild(backLink)

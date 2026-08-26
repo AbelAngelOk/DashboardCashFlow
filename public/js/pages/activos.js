@@ -272,7 +272,7 @@ export async function render(main) {
       })
       nameCol.appendChild(toggleBtn)
     }
-    const link = el("a", { href: `/app/activos/${record.id}`, "data-link": "", style: "text-decoration:none; color:inherit;" }, record.name)
+    const link = el("a", { href: `/activos/${record.id}`, "data-link": "", style: "text-decoration:none; color:inherit;" }, record.name)
     link.addEventListener("mouseenter", () => link.style.textDecoration = "underline")
     link.addEventListener("mouseleave", () => link.style.textDecoration = "none")
     nameCol.appendChild(link)
@@ -302,7 +302,7 @@ export async function render(main) {
     })
     actionsCol.appendChild(markerBtn)
 
-    const goLink = el("a", { href: `/app/activos/${record.id}`, "data-link": "", class: "flow-row-icon-btn", "aria-label": "Ver detalle" })
+    const goLink = el("a", { href: `/activos/${record.id}`, "data-link": "", class: "flow-row-icon-btn", "aria-label": "Ver detalle" })
     goLink.appendChild(svgIcon("icon-arrow-right", 12))
     actionsCol.appendChild(goLink)
 

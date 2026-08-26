@@ -21,7 +21,7 @@ export function renderDashboardSheet(opts) {
     .map((o) => ({
       id: o.id,
       name: o.name,
-      href: `/app/obligaciones/${o.id}`,
+      href: `/obligaciones/${o.id}`,
       paused: o.status === "PAUSED",
       valueNode: obligationValueNode(o, convertCurrencies, baseCurrency, exchangeRates),
     }))

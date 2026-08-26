@@ -9,14 +9,14 @@ import { openGastoFormDialog } from "../components/gasto-form-dialog.js"
 
 function sourceBadge(source) {
   if (source.type === "obligation") {
-    const link = el("a", { href: `/app/obligaciones/${source.obligationId}`, "data-link": "", class: "source-badge source-badge-blue" })
+    const link = el("a", { href: `/obligaciones/${source.obligationId}`, "data-link": "", class: "source-badge source-badge-blue" })
     link.appendChild(el("span", { class: "source-badge-tag" }, "Obligación"))
     link.appendChild(document.createTextNode(source.obligationName))
     link.appendChild(svgIcon("icon-arrow-right", 10))
     return link
   }
   if (source.type === "asset") {
-    const link = el("a", { href: `/app/activos/${source.assetId}`, "data-link": "", class: "source-badge source-badge-emerald" })
+    const link = el("a", { href: `/activos/${source.assetId}`, "data-link": "", class: "source-badge source-badge-emerald" })
     link.appendChild(el("span", { class: "source-badge-tag" }, "Activo"))
     link.appendChild(document.createTextNode(source.assetName))
     link.appendChild(svgIcon("icon-arrow-right", 10))

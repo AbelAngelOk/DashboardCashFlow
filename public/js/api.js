@@ -74,7 +74,7 @@ async function doFetch(path, options) {
     if (err.isAuth && !path.startsWith("/api/auth")) {
       // Sesión vencida: al no haber SPA con estado global, la forma más simple
       // y correcta de "reautenticar" es volver al login.
-      window.location.href = "/app/login.html"
+      window.location.href = "/login.html"
     }
     throw err
   }

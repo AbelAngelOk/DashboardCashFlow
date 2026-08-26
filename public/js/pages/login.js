@@ -1,4 +1,4 @@
-import { login, getSession } from "/app/js/auth.js"
+import { login, getSession } from "/js/auth.js"
 
 const form = document.getElementById("login-form")
 const errorEl = document.getElementById("error")
@@ -19,7 +19,7 @@ function setLoading(loading) {
 
 // Si ya hay sesión, no tiene sentido mostrar el login
 getSession().then((session) => {
-  if (session) window.location.href = "/app"
+  if (session) window.location.href = "/"
 })
 
 form.addEventListener("submit", async (e) => {
@@ -34,7 +34,7 @@ form.addEventListener("submit", async (e) => {
       showError(result.error)
       return
     }
-    window.location.href = "/app"
+    window.location.href = "/"
   } catch {
     showError("No se pudo conectar con el servidor")
   } finally {

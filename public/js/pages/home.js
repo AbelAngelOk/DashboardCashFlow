@@ -55,7 +55,7 @@ export async function render(main) {
     wrap.appendChild(renderDashboardSheet({
       records, gastoGroups, ingresoGroups, obligations,
       onAddAsset: () => openAssetFormDialog({ onCreate: () => load() }),
-      onAddObligation: () => openObligationFormDialog({ onCreated: (id) => navigate(`/app/obligaciones/${id}`) }),
+      onAddObligation: () => openObligationFormDialog({ onCreated: (id) => navigate(`/obligaciones/${id}`) }),
       onChanged: () => load(),
     }))
   }

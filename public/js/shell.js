@@ -13,30 +13,30 @@ const SIDEBAR_KEY = "cashflow:sidebar-collapsed"
 // Rutas migradas (SPA, sin recarga) vs. las que todavia viven en la app
 // clasica (navegacion completa). Esta lista crece a medida que avanza la
 // Fase 4; hoy solo "/" tiene una pagina vanilla real.
-const MIGRATED_PATHS = new Set(["/app", "/app/configuracion", "/app/historial", "/app/libro-contable", "/app/snapshots", "/app/gastos", "/app/ingresos", "/app/obligaciones", "/app/activos"])
+const MIGRATED_PATHS = new Set(["/", "/configuracion", "/historial", "/libro-contable", "/snapshots", "/gastos", "/ingresos", "/obligaciones", "/activos"])
 
 function sidebarSections(bootstrap) {
   return [
     { title: "Inicio", items: [
-      { href: "/app", label: "Dashboard", icon: "icon-dashboard" },
+      { href: "/", label: "Dashboard", icon: "icon-dashboard" },
     ] },
     { title: "Patrimonio", items: [
-      { href: "/app/activos", label: "Activos", icon: "icon-trending-up" },
-      { href: "/app/obligaciones", label: "Obligaciones", icon: "icon-file-text" },
+      { href: "/activos", label: "Activos", icon: "icon-trending-up" },
+      { href: "/obligaciones", label: "Obligaciones", icon: "icon-file-text" },
     ] },
     { title: "Flujo de Caja", items: [
-      { href: "/app/ingresos", label: "Ingresos", icon: "icon-trending-down" },
-      { href: "/app/gastos", label: "Gastos", icon: "icon-cart" },
+      { href: "/ingresos", label: "Ingresos", icon: "icon-trending-down" },
+      { href: "/gastos", label: "Gastos", icon: "icon-cart" },
     ] },
     { title: "Control", items: [
-      { href: "/app/snapshots", label: "Snapshots", icon: "icon-camera", badge: bootstrap.snapshots.length },
-      { href: "/app/libro-contable", label: "Libro Contable", icon: "icon-book" },
+      { href: "/snapshots", label: "Snapshots", icon: "icon-camera", badge: bootstrap.snapshots.length },
+      { href: "/libro-contable", label: "Libro Contable", icon: "icon-book" },
     ] },
     { title: "Auditoria", items: [
-      { href: "/app/historial", label: "Historial", icon: "icon-history", badge: bootstrap.auditCount },
+      { href: "/historial", label: "Historial", icon: "icon-history", badge: bootstrap.auditCount },
     ] },
     { title: "Configuracion", items: [
-      { href: "/app/configuracion", label: "Personalizacion", icon: "icon-settings" },
+      { href: "/configuracion", label: "Personalizacion", icon: "icon-settings" },
     ] },
   ]
 }
@@ -125,7 +125,7 @@ function initSidebarToggle() {
 function initSignOut() {
   qs("#signout-btn").addEventListener("click", async () => {
     await logout()
-    window.location.href = "/app/login.html"
+    window.location.href = "/login.html"
   })
 }
 
@@ -197,12 +197,12 @@ async function boot() {
   try {
     ;[session, bootstrap] = await Promise.all([getSession(), apiGet("/api/bootstrap")])
   } catch (err) {
-    if (err instanceof ApiError && err.isAuth) return // api.js ya redirigio a /app/login.html
+    if (err instanceof ApiError && err.isAuth) return // api.js ya redirigio a /login.html
     qs("#main").textContent = "No se pudo cargar la aplicacion. Reintenta en unos segundos."
     return
   }
   if (!session) {
-    window.location.href = "/app/login.html"
+    window.location.href = "/login.html"
     return
   }
 
