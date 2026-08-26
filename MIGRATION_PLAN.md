@@ -1,10 +1,10 @@
 # MIGRATION_PLAN.md — De Next.js/React a HTML + CSS + JS vanilla
 
 ---
-Versión: 1.5.0
-Última actualización: 2026-08-26
+Versión: 1.6.0
+Última actualización: 2026-08-25
 Autor: Abel Cejas
-Estado: Activo — Fase 4 completa, sigue Fase 5 (Limpieza)
+Estado: Activo — Fase 4 completa, Fase 5 (Limpieza) primer lote completo — falta mover /app a la raíz
 ---
 
 > Requisito previo: leer [`ARCHITECTURE.md`](ARCHITECTURE.md).
@@ -718,5 +718,51 @@ La pantalla más grande de todas después de Activos: `dashboard-sheet.tsx` (125
 ## Fase 4 — completa
 
 Con el Dashboard se cierra la migración pantalla por pantalla: Login/Register, Shell, Configuración, Historial, Libro Contable, Snapshots (lista + detalle), Gastos/Ingresos (lista + detalle), Obligaciones, Activos (lista + detalle), y Dashboard. Toda pantalla alcanzable desde la navegación principal vive en `/app/*` con paridad funcional verificada contra la API real en cada sub-fase — ninguna se dio por migrada sin ese paso.
+
+### Fase 5 — Limpieza (primer lote) · **completa**
+
+Primer lote de limpieza: borrado de todo lo que quedó huérfano al terminar la Fase 4, y ajuste de `package.json` a lo que el servidor realmente necesita.
+
+**Corrección de premisa — el plan original decía "eliminar React, React DOM".** Es incorrecto y no se ejecutó así: `next@16.2.6` declara `react` y `react-dom` como **peerDependencies obligatorias** (`node -e "require('./node_modules/next/package.json').peerDependencies"`), o sea que Next.js no arranca sin ellas aunque no quede un solo `.tsx` de UI. Next.js se queda como servidor de API + estáticos, y esas dos dependencias se quedan con él — no es una regresión ni un olvido, es una restricción real del framework que el plan original no había verificado.
+
+**Borrado (`git rm`), confirmado sin consumidores server-side antes de cada borrado (`Grep` sobre `lib/*.ts` y `app/api/**`):**
+
+| Qué | Detalle |
+|---|---|
+| `app/(dashboard)/**` | 19 archivos — todas las pantallas React, ya con equivalente vanilla verificado en Fase 4 |
+| `app/login/`, `app/register/` | Páginas React de auth — reemplazadas por `public/app/login.html` / `register.html` |
+| `components/**` | Directorio completo — cero imports desde `lib/*.ts` o `app/api/**` |
+| `hooks/**` | Directorio completo — mismo chequeo |
+| `lib/utils.ts` | El `cn()` de shadcn — solo lo usaba `components/**` |
+| `postcss.config.mjs`, `components.json` | Config de Tailwind/shadcn CLI, sin Tailwind ya no aplica |
+| `app/globals.css` | Directivas Tailwind — no relacionado con el CSS propio de `public/app/**` |
+| `proxy.ts` (middleware) | Con cero `page.tsx` restantes y `/api/**`+`/app/**` ya excluidos de su matcher, no protegía nada |
+
+**`app/layout.tsx` reescrito** — Next exige un layout raíz aunque no quede ningún `page.tsx`. Se dejó al mínimo: sin `AuthProvider` (borrado con `components/**`), sin fuentes Geist (no tenían ningún `className` que las usara), sin `globals.css`, sin las entradas de favicon/icon rotas que ya apuntaban a archivos inexistentes (`icon-light-32x32.png` etc. — deuda preexistente, no introducida acá).
+
+**`package.json` recortado.** De 70 dependencias runtime a 10 (`@prisma/adapter-pg`, `@prisma/client`, `@vercel/analytics`, `bcryptjs`, `next`, `next-auth`, `pg`, `prisma`, `react`, `react-dom`) + 6 dev (`@types/bcryptjs`, `@types/node`, `@types/pg`, `@types/react`, `@types/react-dom`, `typescript`). Se fueron 27 `@radix-ui/*`, 13 `@tiptap/*`, todo el stack de Tailwind (`tailwindcss`, `@tailwindcss/postcss`, `postcss`, `tailwind-merge`, `tw-animate-css`, `autoprefixer`), y los huérfanos ya identificados en `ARCHITECTURE.md` P1 (`recharts`, `embla-carousel-react`, `react-day-picker`, `vaul`, `cmdk`, `react-resizable-panels`, `input-otp`, `next-themes`, `sonner`, `react-hook-form`, `@hookform/resolvers`, `date-fns`, `zod`, `playwright`, `postgres`, `class-variance-authority`, `clsx`, `lucide-react`).
+
+**Nota operativa (Windows).** `npm install` falló primero con `EPERM` al no poder borrar binarios nativos de Tailwind — un dev server de un turno anterior seguía corriendo y tenía esos archivos abiertos vía el watcher de Turbopack. Se mató ese proceso y se borraron a mano los directorios huérfanos (`@radix-ui`, `@tiptap`, `@tailwindcss`, `tailwindcss`, `tailwind-merge`, `tw-animate-css`) antes de reintentar. No es un problema del código, solo de tener un proceso viejo reteniendo handles.
+
+### Verificación ejecutada
+
+| Check | Resultado |
+|---|---|
+| `tsc --noEmit` tras todos los borrados | ✅ Sin errores |
+| `npm run build` (¿arranca Next con cero `page.tsx` bajo `app/`?) | ✅ Build limpio — todas las rutas listadas son `ƒ /api/**` (dinámicas) + `○ /_not-found`, sin ninguna página |
+| Servidor real + usuario descartable (`fase5-smoketest-*@example.com`) | ✅ registro → login (`/api/auth/callback/credentials`) → `/api/auth/session` con cookie |
+| `GET /api/bootstrap` | ✅ `auditCount` en vez del audit log completo, tal cual P2 del diagnóstico original |
+| `GET /api/dashboard` | ✅ 200 |
+| Estáticos: `/app/index.html`, `/app/js/shell.js`, `/app/js/pages/home.js`, `/app/login.html` | ✅ 200, `content-type` correcto |
+| Rewrite SPA: `/app/activos`, `/app/activos/some-id` (deep link con id inventado) | ✅ 200, sirve `index.html` — el router de `router.js` decide client-side |
+| `/` (raíz, ya sin `page.tsx`) | ⚠️ 404 — **esperado, no es regresión**: se confirmó por `Grep` que ningún flujo (`login.js`, `register.js`, `shell.js`, `api.js`) redirige nunca a `/`, todos van a `/app` o `/app/login.html` |
+| Escritura real: `POST /api/categories`, `POST /api/records` (con `record`+`movement` completos) | ✅ Category y gasto creados, reaparecen en el siguiente `GET /api/bootstrap` |
+| Sin sesión | (no re-verificado en este lote — ya cubierto en la verificación de Fase 4 Dashboard) |
+| Limpieza del usuario de prueba (categoría + record + audit log + user) | ✅ Eliminado vía script puntual con el mismo adapter (`@prisma/adapter-pg`) que usa `lib/db.ts`; 3 usuarios reales confirmados intactos después |
+
+### Pendiente dentro de la Fase 5
+
+- Mover `public/app/**` a la raíz del sitio y actualizar los ~20 archivos con `/app/` hardcodeado (`api.js`, varios `pages/*.js`, `router.js`, `shell.js`) + las reglas de rewrite en `next.config.mjs`. Tratado como su propio paso, de mayor riesgo — no arrancado todavía.
+- Commit de este lote.
 
 **Quedan las Fases 5 y 6 del plan original** (ver §6 más arriba): Fase 5 — Limpieza (retirar `app/(dashboard)/**`, `components/**` no reusado, React, Radix, TipTap y las dependencias huérfanas; mover `/app` a la raíz) y Fase 6 — Auditoría de rendimiento (FCP/LCP/TBT, tamaño de bundle, tabla de requests por pantalla). Ninguna de las dos se abordó todavía.

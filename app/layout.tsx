@@ -1,23 +1,13 @@
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
-import { AuthProvider } from "@/components/session-provider"
-import "./globals.css"
 
-const _geist = Geist({ subsets: ["latin"] })
-const _geistMono = Geist_Mono({ subsets: ["latin"] })
-
+// Next.js exige un layout raíz aunque no quede ningún page.tsx bajo app/ —
+// toda la UI real vive en public/app/** (HTML/CSS/JS vanilla). Este layout
+// solo importa lo mínimo que Next necesita para compilar; ya no depende de
+// componentes de React (todos removidos en la Fase 5 de MIGRATION_PLAN.md).
 export const metadata: Metadata = {
   title: "Cash Flow",
   description: "Personal financial dashboard",
-  icons: {
-    icon: [
-      { url: "/icon-light-32x32.png", media: "(prefers-color-scheme: light)" },
-      { url: "/icon-dark-32x32.png", media: "(prefers-color-scheme: dark)" },
-      { url: "/icon.svg", type: "image/svg+xml" },
-    ],
-    apple: "/apple-icon.png",
-  },
 }
 
 export default function RootLayout({
@@ -27,8 +17,8 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es">
-      <body className="font-sans antialiased">
-        <AuthProvider>{children}</AuthProvider>
+      <body>
+        {children}
         {process.env.NODE_ENV === "production" && <Analytics />}
       </body>
     </html>
