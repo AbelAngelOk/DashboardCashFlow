@@ -1,0 +1,27 @@
+// Portado desde components/ui/tailwind-color-picker.tsx — misma paleta,
+// mismos valores hex, para que un marcador se vea igual en ambas apps.
+
+export const TAILWIND_COLORS = [
+  { name: "Slate", value: "#475569" },
+  { name: "Gray", value: "#4B5563" },
+  { name: "Zinc", value: "#52525B" },
+  { name: "Neutral", value: "#525252" },
+  { name: "Stone", value: "#57534E" },
+  { name: "Red", value: "#EF4444" },
+  { name: "Orange", value: "#F97316" },
+  { name: "Amber", value: "#F59E0B" },
+  { name: "Yellow", value: "#CA8A04" },
+  { name: "Lime", value: "#84CC16" },
+  { name: "Green", value: "#22C55E" },
+  { name: "Emerald", value: "#10B981" },
+  { name: "Teal", value: "#14B8A6" },
+  { name: "Cyan", value: "#06B6D4" },
+  { name: "Sky", value: "#0EA5E9" },
+  { name: "Blue", value: "#3B82F6" },
+  { name: "Indigo", value: "#6366F1" },
+  { name: "Violet", value: "#8B5CF6" },
+  { name: "Purple", value: "#A855F7" },
+  { name: "Fuchsia", value: "#D946EF" },
+  { name: "Pink", value: "#EC4899" },
+  { name: "Rose", value: "#F43F5E" },
+]

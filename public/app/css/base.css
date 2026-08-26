@@ -1,0 +1,83 @@
+/* Reset + tokens. Diseño monocromo: negro/blanco, bordes de 2px, sin radios,
+   sin sombras — excepto los tres colores de estado (emerald/amber/rose). */
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+
+:root {
+  --black: #000;
+  --white: #fff;
+  --gray-50: #f9fafb;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-300: #d1d5db;
+  --gray-400: #9ca3af;
+  --gray-500: #6b7280;
+  --gray-600: #4b5563;
+  --gray-700: #374151;
+  --gray-800: #1f2937;
+
+  --emerald-50: #ecfdf5;
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+  --amber-500: #f59e0b;
+  --rose-50: #fff1f2;
+  --rose-500: #f43f5e;
+  --rose-700: #be123c;
+
+  --border: 2px solid var(--black);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+  color: var(--black);
+  background: var(--white);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+h1, h2, h3, p { margin: 0; }
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* Ningún control de formulario lleva radio, a propósito (ver CLAUDE.md) */
+input, select, textarea, button {
+  border-radius: 0;
+}
+
+button {
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+a { color: inherit; text-decoration: none; }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px; height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* Spinner — única animación continua del proyecto (carga real, no cosmética) */
+.spinner {
+  display: inline-block;
+  width: 12px; height: 12px;
+  border: 2px solid var(--black);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Transiciones — solo transform/opacity, nunca propiedades de layout */
+.fade-in { animation: fadeIn 0.15s ease-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }

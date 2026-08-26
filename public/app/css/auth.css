@@ -1,0 +1,32 @@
+/* Pantallas de login/register — fuera del shell, centradas en la ventana. */
+
+.auth-wrap {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--white);
+}
+
+.auth-card { width: 100%; max-width: 24rem; }
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem;
+}
+
+.auth-submit { padding: 0.5rem 0; }
+
+.auth-switch {
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--gray-500);
+}
+
+.auth-link {
+  font-weight: bold;
+  text-decoration: underline;
+}
+.auth-link:hover { color: var(--black); }

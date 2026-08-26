@@ -14,10 +14,12 @@ import {
 import {
   loadJournalEntries,
   getAccountBalances,
-  type JournalEntryRecord,
-  type AccountBalances,
-  type AccountType,
 } from "@/lib/journal-actions"
+import type {
+  JournalEntryRecord,
+  AccountBalances,
+  AccountType,
+} from "@/lib/journal-internal"
 import { formatAmount, type Currency } from "@/lib/finance"
 
 const ACCOUNT_LABELS: Record<AccountType, string> = {

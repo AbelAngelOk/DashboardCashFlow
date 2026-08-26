@@ -3,7 +3,8 @@
 import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
-import { createJournalEntry, getAccountBalances } from "./journal-actions"
+import { getAccountBalances } from "./journal-actions"
+import { createJournalEntry } from "./journal-internal"
 import {
   extendRecurringDividends,
   extractBoards,

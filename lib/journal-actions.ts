@@ -5,80 +5,21 @@ import { Prisma } from "@prisma/client"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import type { Currency } from "./finance"
+import type { AccountType, AccountBalances, JournalEntryRecord } from "./journal-internal"
+
+// Los tipos NO se reexportan desde acá: Next.js emite el re-export en runtime y
+// rompe el build de un archivo "use server". Los consumidores importan los tipos
+// directamente de ./journal-internal.
+
+// `createJournalEntry` vive en ./journal-internal a propósito. Recibe `userId` del
+// llamador, y todo export de un archivo "use server" es invocable desde el navegador:
+// acá habría permitido escribir asientos en el libro de cualquier usuario.
+// NO la reexportes desde este archivo.
 
 async function getUserId(): Promise<string> {
   const session = await getServerSession(authOptions)
   if (!session?.user?.id) throw new Error("No autorizado")
   return session.user.id
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-export type AccountType =
-  | "activos"
-  | "pasivos"
-  | "ingresos"
-  | "gastos"
-  | "efectivo"
-  | "obligaciones"
-
-export interface JournalEntryRecord {
-  id: string
-  date: string
-  description: string
-  currency: Currency
-  amount: number
-  debitAccount: AccountType
-  creditAccount: AccountType
-  sourceEntityId?: string
-  targetEntityId?: string
-  reference?: string
-  notes?: string
-}
-
-export interface AccountBalances {
-  activos: Record<string, number>
-  pasivos: Record<string, number>
-  ingresos: Record<string, number>
-  gastos: Record<string, number>
-  efectivo: Record<string, number>
-  obligaciones: Record<string, number>
-}
-
-// ── Internal helper: create a single journal entry ────────────────────────────
-// Called from other server actions (NOT exported as a standalone user-facing action)
-
-export async function createJournalEntry(
-  userId: string,
-  data: {
-    description: string
-    currency: string
-    amount: number
-    debitAccount: AccountType
-    creditAccount: AccountType
-    sourceEntityId?: string
-    targetEntityId?: string
-    reference?: string
-    notes?: string
-  },
-): Promise<string> {
-  const id = crypto.randomUUID()
-  await prisma.journalEntry.create({
-    data: {
-      id,
-      description: data.description,
-      currency: data.currency,
-      amount: data.amount,
-      debitAccount: data.debitAccount,
-      creditAccount: data.creditAccount,
-      sourceEntityId: data.sourceEntityId ?? null,
-      targetEntityId: data.targetEntityId ?? null,
-      reference: data.reference ?? null,
-      notes: data.notes ?? null,
-      userId,
-    },
-  })
-  return id
 }
 
 // ── Load: paginated/filtered journal entries ──────────────────────────────────

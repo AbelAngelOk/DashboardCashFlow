@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cash Flow — Acceso</title>
+  <link rel="stylesheet" href="/app/css/base.css">
+  <link rel="stylesheet" href="/app/css/auth.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <div class="panel auth-card">
+      <div class="panel-header">Cash Flow — Acceso</div>
+      <form id="login-form" class="auth-form" novalidate>
+        <div class="field">
+          <label for="email">Email</label>
+          <input class="input" id="email" name="email" type="email" placeholder="tu@email.com" required autocomplete="email">
+        </div>
+        <div class="field">
+          <label for="password">Contraseña</label>
+          <input class="input" id="password" name="password" type="password" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <p id="error" class="error-text" hidden></p>
+        <button type="submit" id="submit-btn" class="btn btn-primary auth-submit">Ingresar</button>
+        <p class="auth-switch">¿No tenés cuenta? <a href="/app/register.html" class="auth-link">Registrarse</a></p>
+      </form>
+    </div>
+  </div>
+  <script type="module" src="/app/js/pages/login.js"></script>
+</body>
+</html>

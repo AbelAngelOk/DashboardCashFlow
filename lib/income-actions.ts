@@ -4,7 +4,7 @@ import { getServerSession } from "next-auth"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import type { Currency } from "./finance"
-import { createJournalEntry } from "./journal-actions"
+import { createJournalEntry } from "./journal-internal"
 import { addMonths, ruleDatesInWindow, type ObligationRule, type RecurrenceType } from "./obligations"
 import {
   computeAnnualProjection,

@@ -6,7 +6,7 @@ import { ArrowLeft, Camera } from "lucide-react"
 import { useFinance } from "@/components/finance-store"
 import { DashboardSheet } from "@/components/dashboard-sheet"
 import { formatAmount, type Currency } from "@/lib/finance"
-import type { AccountType, AccountBalances } from "@/lib/journal-actions"
+import type { AccountType, AccountBalances } from "@/lib/journal-internal"
 
 const ACCOUNT_LABELS: Record<AccountType, string> = {
   activos: "Activos",

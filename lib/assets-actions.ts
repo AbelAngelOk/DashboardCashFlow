@@ -6,7 +6,7 @@ import { prisma } from "./db"
 import type { Asset, AssetFinancialMovement, AssetType, MovementType, TrackingConfig, BoardConfig } from "./assets"
 import { extractBoards } from "./assets"
 import type { Currency } from "./finance"
-import { createJournalEntry } from "./journal-actions"
+import { createJournalEntry } from "./journal-internal"
 
 async function getUserId(): Promise<string> {
   const session = await getServerSession(authOptions)

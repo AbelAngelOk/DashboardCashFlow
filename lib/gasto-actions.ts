@@ -7,7 +7,7 @@ import type { Currency } from "./finance"
 import type { AssetType } from "./assets"
 import type { GastoIngresoLink } from "./link-types"
 import { addMovement } from "./assets-actions"
-import { createJournalEntry } from "./journal-actions"
+import { createJournalEntry } from "./journal-internal"
 
 async function getUserId(): Promise<string> {
   const session = await getServerSession(authOptions)
