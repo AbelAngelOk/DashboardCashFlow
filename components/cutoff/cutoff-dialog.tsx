@@ -87,7 +87,9 @@ export function CutoffDialog({
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [running, setRunning] = useState(false)
 
-  const [takeSnapshot, setTakeSnapshot] = useState(true)
+  // El snapshot pre-corte ya no es opcional: es la única forma de deshacer
+  // un corte confirmado por error (ver PRODUCT_REVIEW.md §3.5 y §5.7).
+  const takeSnapshot = true
   const [keepMarked, setKeepMarked] = useState(false)
   const [clearEntityMarkers, setClearEntityMarkers] = useState(false)
 
@@ -148,6 +150,23 @@ export function CutoffDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {status.periodsOverdue > 0 && (
+          <div
+            data-testid="cutoff-overdue-warning"
+            className="border-2 border-amber-500 bg-amber-50 p-3 text-xs text-amber-800"
+          >
+            <p className="font-bold">
+              Pasaron {status.periodsOverdue} período(s) sin cortar antes de este.
+            </p>
+            <p className="mt-1">
+              El corte no filtra por fecha — archiva todo lo que esté activo ahora mismo, sin importar
+              cuánto tiempo pasó. Los meses salteados van a quedar mezclados en este mismo corte, sin
+              forma de separarlos después. Si te importa la granularidad mensual, revisá tus
+              registros antes de confirmar.
+            </p>
+          </div>
+        )}
+
         {/* Vista previa del impacto */}
         <div
           data-testid="cutoff-preview"
@@ -197,11 +216,11 @@ export function CutoffDialog({
         <div className="flex flex-col gap-5 py-1">
           <SwitchRow
             id="cutoff-switch-snapshot"
-            label="Guardar snapshot del mes que sale"
-            description={`Toma una foto del dashboard antes de archivar, con el nombre "Cierre ${status.pendingPeriodLabel}".`}
+            label="Snapshot de seguridad antes de archivar (siempre activo)"
+            description={`Se guarda solo, con el nombre "Cierre ${status.pendingPeriodLabel}", antes de tocar nada. El corte en sí no se puede deshacer — este snapshot es tu única forma de reconstruir el estado anterior si te equivocaste. Por eso no se puede apagar.`}
             checked={takeSnapshot}
-            onCheckedChange={setTakeSnapshot}
-            disabled={running}
+            onCheckedChange={() => {}}
+            disabled
           />
           <SwitchRow
             id="cutoff-switch-keep-marked"

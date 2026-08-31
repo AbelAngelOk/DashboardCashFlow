@@ -1,6 +1,6 @@
 ---
-Versión: 2.0.0
-Última actualización: 2026-06-30
+Versión: 2.2.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -10,6 +10,8 @@ Estado: Activo
 ## Objetivo
 
 Mostrar el estado financiero actual del usuario en tiempo real: Estado de Resultados (ingresos vs. gastos) y Balance (activos vs. pasivos). Permite crear, editar y eliminar registros financieros directamente desde la vista, y tomar snapshots del estado.
+
+**v2.6.0** (ver `docs/CHANGELOG.md` y `PRODUCT_REVIEW.md` §3.1 en la raíz): el panel Auditor suma **Libertad Financiera** (ingreso vinculado a un activo ÷ gasto total) y un aviso cuando las tasas de cambio están desactualizadas. **v2.5.1**: cada tabla (Ingresos/Gastos/Activos/Obligaciones) tiene su propio skeleton de carga y estado vacío — el shell ya no espera a la DB para pintarse.
 
 **Ruta**: `/`
 **Componente principal**: `components/dashboard-sheet.tsx` (`DashboardSheet`)

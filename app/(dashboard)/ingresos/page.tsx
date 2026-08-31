@@ -5,6 +5,7 @@ import Link from "next/link"
 import { Check, ChevronDown, ChevronRight, ExternalLink, Network, Pencil, Plus, TrendingDown, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { TableRowsSkeleton } from "@/components/ui/loading-skeleton"
 import {
   loadIngresos,
   archiveIngreso,
@@ -288,7 +289,9 @@ export default function IngresosPage() {
       </div>
 
       {loading ? (
-        <div className="py-16 text-center text-sm text-gray-400">Cargando...</div>
+        <div className="border-2 border-black">
+          <TableRowsSkeleton rows={5} />
+        </div>
       ) : ingresos.length === 0 ? (
         <div className="flex flex-col items-center gap-3 py-20 text-center">
           <TrendingDown className="h-12 w-12 text-gray-200" />

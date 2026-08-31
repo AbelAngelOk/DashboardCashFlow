@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { ChevronDown, ChevronRight, Network, Trash2, Unlink } from "lucide-react"
 import { formatAmount, type FinancialRecord } from "@/lib/finance"
-import { ASSET_TYPE_LABELS, type AssetType } from "@/lib/assets"
+import { categoryName } from "@/lib/asset-categories"
 import { ConfirmWithCommentDialog } from "@/components/activos/confirm-with-comment-dialog"
 import { useSettings } from "@/components/settings-store"
 import { useAssetCategories } from "@/components/activos/asset-categories-store"
@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
+import { TableRowsSkeleton } from "@/components/ui/loading-skeleton"
 
 // ── LiquidarActivoDialog ──────────────────────────────────────────────────────
 
@@ -100,6 +101,7 @@ function LiquidarActivoDialog({
 interface AssetListProps {
   topLevel: FinancialRecord[]
   all: FinancialRecord[]
+  loading?: boolean
   onLiquidate?: (record: FinancialRecord, comment: string, createIngreso: boolean) => void
   onPhysicalDelete?: (record: FinancialRecord) => void
   onRemoveFromGroup?: (assetId: string) => void
@@ -112,6 +114,7 @@ interface AssetListProps {
 export function AssetList({
   topLevel,
   all,
+  loading,
   onLiquidate,
   onPhysicalDelete,
   onRemoveFromGroup,
@@ -202,7 +205,9 @@ export function AssetList({
           <div className="w-20 px-3 py-2" />
         </div>
 
-        {filtered.map((record) => {
+        {loading && <TableRowsSkeleton rows={5} />}
+
+        {!loading && filtered.map((record) => {
           const children = getChildren(record.id)
           const expanded = expandedIds.has(record.id)
           const isGroup = record.isGroupParent || children.length > 0
@@ -256,9 +261,7 @@ export function AssetList({
                   )}
                 </div>
                 <div className="w-36 px-3 py-2 text-xs text-gray-500">
-                  {record.assetType
-                    ? (ASSET_TYPE_LABELS[record.assetType as AssetType] ?? record.assetType)
-                    : "—"}
+                  {categoryName(record.assetType, categories)}
                 </div>
                 <div className="w-44 px-3 py-2 text-right">
                   {isGroup && children.length > 0 ? (
@@ -332,9 +335,7 @@ export function AssetList({
                       </Link>
                     </div>
                     <div className="w-36 px-3 py-2 text-xs text-gray-400">
-                      {child.assetType
-                        ? (ASSET_TYPE_LABELS[child.assetType as AssetType] ?? child.assetType)
-                        : "—"}
+                      {categoryName(child.assetType, categories)}
                     </div>
                     <div className="w-44 px-3 py-2 text-right text-gray-600">
                       {formatAmount(child.amount, child.currency)}{" "}
@@ -373,7 +374,7 @@ export function AssetList({
           )
         })}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-gray-500">
             {filterTypes.size > 0
               ? "No hay activos para los tipos seleccionados."

@@ -1,6 +1,6 @@
 ---
-Versión: 2.0.0
-Última actualización: 2026-06-30
+Versión: 2.1.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -10,6 +10,8 @@ Estado: Activo
 ## Objetivo
 
 Capturar y persistir el estado financiero del usuario en un punto específico del tiempo para comparación histórica. Un snapshot congela el dashboard completo (ingresos, gastos, activos, pasivos) con sus valores al momento de la captura.
+
+**v2.6.0** (ver `docs/CHANGELOG.md`): `/snapshots` suma un gráfico de tendencia (Patrimonio Neto y Flujo de Caja a través de los snapshots guardados), y el diálogo "Tomar Snapshot" del Dashboard reemplazó los campos de fecha inicio/fin — nunca filtraron nada, era solo texto del período — por un único campo de texto explícito.
 
 **Ruta**: `/snapshots` (lista), `/snapshots/[id]` (vista read-only)
 **Páginas**: `app/(dashboard)/snapshots/page.tsx` y `app/(dashboard)/snapshots/[id]/page.tsx`

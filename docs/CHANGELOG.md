@@ -1,6 +1,6 @@
 ---
-Versión: 2.5.0
-Última actualización: 2026-08-17
+Versión: 2.7.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -11,6 +11,65 @@ Todos los cambios notables del proyecto se documentan en este archivo.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
 
 ---
+
+## [2.7.0] - 2026-08-26
+
+Lote de 5 mejoras puntuales al módulo Activos, a pedido directo del usuario: reglas de dividendos por porcentaje, nomenclatura de cuotas en reglas de ingreso, advertencia de nombre duplicado, apalancamiento + liquidación individual en futuros, y alta de activos por posiciones LONG/SHORT.
+
+### Added
+- **Dividendos por porcentaje**: `AddDividendDialog` ya permitía cargar un `percentage`, pero nunca se usaba — quedaba solo como dato decorativo. Ahora `CollectDividendDialog` calcula `(percentage / 100) × valor actual del activo` y precarga "Ganancia obtenida" con esa sugerencia, editable antes de confirmar.
+- **Nomenclatura de cuotas** (`formatOccurrenceName()` en `lib/income-streams.ts`): las reglas de ingreso con cronograma finito muestran `"Cuota N/total — {nombre}"` en el nombre del ingreso generado, en la lista "Próximos cobros" del detalle del activo, y en las descripciones de asiento/auditoría al cobrar. Aplicado en los cuatro puntos donde el nombre se genera o se muestra (`ensureIncomeWindow`, `activateIncomeOccurrences`, `collectIncomeOccurrence`, `loadIncomeRules`/`mapOccurrenceRow`) para que el número no se pierda en ningún paso del camino.
+- **Advertencia de nombre duplicado** en `AssetFormDialog`: si el nombre coincide (case-insensitive) con un activo ya existente, muestra aviso ámbar y bloquea "Crear activo".
+- **Futuros — apalancamiento + liquidación individual**: `FuturesMovementMetadata` suma `leverage`, `closed`, `closePrice`, `closeDate`, `pnl`. Cada posición se abre con su apalancamiento y se cierra por separado desde `ClosePositionDialog` (precio de salida → P&L calculado y guardado en la propia posición vía `updateMovement()`). El promedio de entrada y los contadores de posiciones abiertas filtran por `metadata.closed !== true`. Liquidar todas las posiciones juntas sigue existiendo aparte, sin cambios.
+- **Alta de activo por posiciones LONG/SHORT**: en `AssetFormDialog`, un modo alternativo ("Cargar por operaciones") reemplaza los campos manuales de cantidad/precio promedio por una lista repetible de posiciones; `netFromPositions()` calcula cantidad neta y precio promedio ponderado. Coexiste con el modo simple. Genera un `FinancialMovement` por posición (mismo formato que usa el panel de Futuros, por lo que estas posiciones también se pueden liquidar individualmente después) en vez del movimiento agregado "Inversión inicial" — nuevo flag `skipInitialMovement` en `createAsset()` evita duplicar historial y asiento contable.
+
+### Fixed
+- `lib/income-actions.ts` (`mapOccurrenceRow`/`loadIncomeRules`): la lista "Próximos cobros" del detalle del activo mostraba el nombre plano de la regla incluso con cronograma finito — la numeración de cuotas se había aplicado a los registros pero no a esta vista. Ahora usa `formatOccurrenceName()` igual que el resto de los puntos de escritura.
+- `AssetFormDialog`: race condition real entre el `onChange` de `NumericInput` (dispara solo en blur) y el click de "Crear activo" — si el usuario tipeaba el último campo de una posición y hacía click sin que el blur llegara a asentarse, `handleSave` podía guardar cantidad/precio incompletos. `handleSave` ahora recalcula directo desde el array `positions`, no desde el estado derivado por `useEffect`.
+
+### Changed
+- `createAsset()` (`lib/assets-actions.ts`): nuevo parámetro opcional `skipInitialMovement` — omite el movimiento "Inversión inicial" agregado cuando el caller ya generó sus propios movimientos individuales, sin afectar el asiento contable único que siempre se postea por el monto total.
+
+---
+
+## [2.6.0] - 2026-08-26
+
+Lote de 11 mejoras surgidas de una revisión de producto (`PRODUCT_REVIEW.md`) y de una aclaración del modelo de corte/snapshots (`CORTE_Y_SNAPSHOTS.md`), ambos en la raíz del repo. Cubre errores de confianza, la propuesta de valor central del dashboard, huecos funcionales medios y recuperación de contraseña.
+
+### Added
+- **Libertad Financiera**: nuevo indicador en el panel Auditor del Dashboard — % del gasto total cubierto por ingreso vinculado a un activo (`record.linkedTo` → un `activo`). Es la métrica central del formato CASHFLOW en el que se basa el dashboard; antes se podía calcular con los datos existentes pero nunca se mostraba.
+- **Tendencia histórica en `/snapshots`**: gráfico de línea (SVG propio, sin librerías nuevas) de Patrimonio Neto y Flujo de Caja a través de los snapshots guardados. Convierte con las tasas de cambio *actuales* — los snapshots no guardan las tasas vigentes al momento de tomarse, se documenta esa limitación en la propia pantalla.
+- **Alerta de antigüedad de tipos de cambio**: `ratesLastUpdated` pasa a guardarse en ISO (antes era un string ya formateado, no parseable). Nuevo `ratesAgeDays()`/`formatRatesAge()` en `lib/finance.ts`. Aviso ámbar en `/configuracion` y en el Dashboard (panel Auditor) cuando las tasas tienen más de `RATES_STALE_AFTER_DAYS` (7) días.
+- **Corte mensual — snapshot de seguridad obligatorio**: el switch "Guardar snapshot" del diálogo de corte deja de ser opcional (`components/cutoff/cutoff-dialog.tsx`) — es la única forma de deshacer un corte confirmado por error.
+- **Corte mensual — alerta de atraso**: `CutoffStatus.periodsOverdue` (nuevo campo, `lib/cutoff.ts` + `lib/cutoff-actions.ts`) cuenta cuántos períodos completos quedaron sin cortar. El botón "Realizar corte de mes" muestra un badge ámbar y el diálogo un aviso explícito cuando `periodsOverdue > 0` — el corte no filtra por fecha, así que los períodos salteados se mezclan sin poder separarlos después.
+- **Exportar datos a CSV**: sección nueva en `/configuracion` (`lib/csv-export.ts`, 100% client-side) para descargar records actuales y el historial de movimientos.
+- **Onboarding de una pantalla**: `components/onboarding-card.tsx`, visible solo mientras el dashboard está genuinamente vacío — explica activo/pasivo/ingreso/gasto en el sentido Kiyosaki para quien no conoce ese marco.
+- **Rate limiting básico** (`lib/rate-limit.ts`, en memoria, sin infra nueva): login (10 intentos / 5 min por IP) y registro (5 / hora). Limitación documentada: no es distribuido entre instancias serverless.
+- **Recuperación de contraseña**: modelo `PasswordResetToken` (nuevo, `prisma/schema.prisma`), `lib/password-reset-actions.ts`, páginas `/forgot-password` y `/reset-password`. Tokens de un solo uso, expiran en 1 hora. Sin proveedor de email conectado todavía — el link se loguea en la consola del servidor (limitación documentada explícitamente en el código y en `PRODUCT_REVIEW.md` §3.4).
+
+### Fixed
+- `components/activos/asset-list.tsx`: la columna "Tipo" resolvía el nombre de categoría contra el mapa legado `ASSET_TYPE_LABELS` (11 entradas fijas) en vez de `categoryName()`/`useAssetCategories()` — categorías creadas por el usuario se mostraban como UUID crudo.
+- Diálogo "Tomar Snapshot": los campos de fecha inicio/fin aparentaban filtrar qué registros entraban al snapshot y nunca lo hicieron (`takeSnapshot()` siempre congela todos los records actuales). Se reemplazaron por un solo campo de texto "Período" con la aclaración explícita de que es solo una etiqueta.
+- `app/login/page.tsx`: el mensaje de error mostraba siempre "Email o contraseña incorrectos" sin importar la causa real — un usuario bloqueado por rate limiting nunca veía el motivo. Ahora distingue `CredentialsSignin` (genérico) del resto de los mensajes que `authorize()` pueda tirar.
+- Libertad Financiera mostraba "Sin gastos activos todavía" durante la ventana de carga inicial del dashboard (antes de que `records` llegara de la DB), en vez de un estado de carga neutral — mismo patrón de bug ya corregido en las tablas del dashboard, encontrado durante la verificación de este lote.
+
+### Changed
+- `proxy.ts`: matcher actualizado para excluir `/forgot-password` y `/reset-password` (deben ser accesibles sin sesión).
+
+---
+
+## [2.5.1] - 2026-08-26
+
+Renderizado progresivo del dashboard, independiente de los tiempos de espera de la DB — sin cambios de propuesta de valor, es una entrega de rendimiento/UX pura. Verificado con throttling de red real (ver conversación previa a `PRODUCT_REVIEW.md`).
+
+### Added
+- `components/dashboard-sheet.tsx`: cada una de las 4 tablas del Dashboard (Ingresos/Gastos/Activos/Obligaciones) tiene ahora su propio skeleton de carga (`SectionTableSkeleton`) y su propio estado vacío con ícono y mensaje (`SectionTableEmpty`) — antes una tabla vacía y una tabla todavía cargando se veían idénticas.
+- `components/ui/loading-skeleton.tsx`: `TableRowsSkeleton`/`CardsSkeleton` compartidos, reusados en Activos, Gastos, Ingresos y Obligaciones (lista y detalle) para el mismo problema fuera del Dashboard.
+- `lib/actions.ts`: `loadData()` partido en `loadFinanceCore()` (records + snapshots) y `loadMovements()` (audit log) — dos fetches independientes en paralelo en `finance-store.tsx`, ninguno espera al otro. El audit log puede ser grande y ninguna pantalla lo necesita para pintar su contenido principal.
+
+### Fixed
+- `components/app-shell.tsx`: ya no tapa toda la app con un spinner único hasta que `records`+`snapshots`+`movements` completos llegan de la DB — el shell (header, sidebar) se pinta siempre de inmediato; cada pantalla maneja su propio estado de carga.
+- `app/(dashboard)/activos/page.tsx`, `obligaciones/page.tsx`, `snapshots/page.tsx`, `movimientos/page.tsx`: dependían del spinner global de `AppShell` para no mostrar un "vacío" falso durante la carga; al sacar ese spinner necesitaron su propio guard de `loading`.
 
 ## [2.5.0] - 2026-08-17
 

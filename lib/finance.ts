@@ -82,6 +82,29 @@ export function formatAmount(amount: number, currency: Currency) {
   })}`
 }
 
+/** Umbral a partir del cual una tasa de cambio se considera vieja. */
+export const RATES_STALE_AFTER_DAYS = 7
+
+/**
+ * Días desde `ratesLastUpdated` (ISO). `null` si nunca se actualizó o el
+ * valor no es parseable (formato legado, pre-ISO) — se trata como "vieja".
+ */
+export function ratesAgeDays(ratesLastUpdated: string | null): number | null {
+  if (!ratesLastUpdated) return null
+  const t = new Date(ratesLastUpdated).getTime()
+  if (Number.isNaN(t)) return null
+  return Math.floor((Date.now() - t) / (1000 * 60 * 60 * 24))
+}
+
+export function formatRatesAge(ratesLastUpdated: string | null): string {
+  const days = ratesAgeDays(ratesLastUpdated)
+  if (ratesLastUpdated && days === null) return "hace tiempo (formato antiguo)"
+  if (days === null) return "nunca se actualizaron"
+  if (days === 0) return "hoy"
+  if (days === 1) return "hace 1 día"
+  return `hace ${days} días`
+}
+
 export function formatTotals(totals: Record<Currency, number>) {
   const active = (Object.keys(totals) as Currency[]).filter(
     (c) => totals[c] !== 0,

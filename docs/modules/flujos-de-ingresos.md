@@ -1,6 +1,6 @@
 ---
-Versión: 2.4.0
-Última actualización: 2026-08-17
+Versión: 2.5.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -74,6 +74,8 @@ Con `installmentCount = N`:
 - Al resolverse las N (cobradas o rechazadas), la regla pasa a `COMPLETED` y deja de proyectar
 
 Esto cierra el caso borde de v2.3.0: un préstamo totalmente cobrado ya no queda con reglas activas colgando.
+
+**v2.5.0 — nomenclatura de cuotas**: `formatOccurrenceName(ruleName, installmentNumber, installmentCount)` en `lib/income-streams.ts` antepone `"Cuota N/total — "` al nombre de la regla cuando el cronograma es finito (sin cronograma finito, devuelve el nombre tal cual). Se aplica en los **tres** puntos donde el nombre queda escrito o mostrado, para que el número nunca se pierda en el camino: al generar la ocurrencia PENDING (`ensureIncomeWindow`), al activarla el corte mensual (`activateIncomeOccurrences` en `lib/cutoff-actions.ts`), al confirmar el cobro (`collectIncomeOccurrence`), y en la lista "Próximos cobros" del detalle del activo (`loadIncomeRules` → `mapOccurrenceRow`). Si se toca cualquiera de estos cuatro puntos, hay que mantenerlos consistentes.
 
 ### Liquidación en especie
 

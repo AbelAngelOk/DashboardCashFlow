@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Plus, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { CardsSkeleton, TableRowsSkeleton } from "@/components/ui/loading-skeleton"
 import { useObligations } from "@/components/obligations-store"
 import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
 import { MarkerPicker } from "@/components/markers/marker-picker"
@@ -76,7 +77,7 @@ const STATUS_COLORS: Record<ObligationStatus, string> = {
 }
 
 export default function ObligacionesPage() {
-  const { obligations, reload } = useObligations()
+  const { obligations, loading, reload } = useObligations()
   const router = useRouter()
   const [filter, setFilter] = useState<ObligationStatus | "ALL">("ALL")
   const [formOpen, setFormOpen] = useState(false)
@@ -127,7 +128,9 @@ export default function ObligacionesPage() {
 
       {/* Mobile: cards */}
       <div className="flex flex-col gap-3 md:hidden">
-        {filtered.map((o) => {
+        {loading && <CardsSkeleton rows={3} />}
+
+        {!loading && filtered.map((o) => {
           const marker = markerMap[o.id] ?? null
           return (
           <Link
@@ -160,7 +163,7 @@ export default function ObligacionesPage() {
           )
         })}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <p className="py-6 text-center text-sm text-gray-500">
             {filter === "ALL"
               ? "No hay obligaciones. Creá la primera con el botón de arriba."
@@ -180,7 +183,9 @@ export default function ObligacionesPage() {
           <div className="w-10 px-1 py-2" />
         </div>
 
-        {filtered.map((o) => {
+        {loading && <TableRowsSkeleton rows={5} />}
+
+        {!loading && filtered.map((o) => {
           const marker = markerMap[o.id] ?? null
           return (
             <div
@@ -223,7 +228,7 @@ export default function ObligacionesPage() {
           )
         })}
 
-        {filtered.length === 0 && (
+        {!loading && filtered.length === 0 && (
           <div className="px-4 py-8 text-center text-sm text-gray-500">
             {filter === "ALL"
               ? "No hay obligaciones. Creá la primera con el botón de arriba."

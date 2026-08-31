@@ -1,9 +1,11 @@
 "use client"
 
 import { useState } from "react"
-import { Settings2, RefreshCw } from "lucide-react"
-import { currencies, type Currency } from "@/lib/finance"
+import { Settings2, RefreshCw, Download } from "lucide-react"
+import { currencies, type Currency, ratesAgeDays, formatRatesAge, RATES_STALE_AFTER_DAYS } from "@/lib/finance"
 import { useSettings } from "@/components/settings-store"
+import { useFinance } from "@/components/finance-store"
+import { toCSV, downloadTextFile } from "@/lib/csv-export"
 import {
   Select,
   SelectContent,
@@ -70,7 +72,21 @@ export default function ConfiguracionPage() {
     ratesLastUpdated,
   } = settings
 
+  const { records, movements } = useFinance()
+
   const otherCurrencies = currencies.filter((c) => c !== baseCurrency)
+
+  const today = new Date().toISOString().slice(0, 10)
+
+  const exportRecords = () => {
+    const csv = toCSV(records, ["id", "type", "name", "amount", "currency", "status", "assetType", "linkedTo", "parentId"])
+    downloadTextFile(`cashflow-registros-${today}.csv`, csv)
+  }
+
+  const exportMovements = () => {
+    const csv = toCSV(movements, ["date", "action", "recordType", "recordName", "detail", "comment"])
+    downloadTextFile(`cashflow-movimientos-${today}.csv`, csv)
+  }
 
   // Custom type UI state
   const [markerManagerOpen, setMarkerManagerOpen] = useState(false)
@@ -176,11 +192,16 @@ export default function ConfiguracionPage() {
                   ))}
                 </div>
 
-                {ratesLastUpdated && (
-                  <p className="text-xs text-gray-400">
-                    Última actualización: {ratesLastUpdated}
-                  </p>
-                )}
+                {(() => {
+                  const days = ratesAgeDays(ratesLastUpdated)
+                  const stale = days === null || days > RATES_STALE_AFTER_DAYS
+                  return (
+                    <p className={`text-xs ${stale ? "font-semibold text-amber-700" : "text-gray-400"}`}>
+                      Última actualización: {formatRatesAge(ratesLastUpdated)}
+                      {stale && ratesLastUpdated && " — el patrimonio convertido puede estar desactualizado"}
+                    </p>
+                  )
+                })()}
               </div>
 
               <SwitchRow
@@ -214,6 +235,34 @@ export default function ConfiguracionPage() {
           >
             Gestionar marcadores
           </button>
+        </div>
+      </div>
+
+      {/* Exportar Datos */}
+      <div className="mt-8 border-2 border-black">
+        <div className="border-b-2 border-black bg-black px-4 py-2">
+          <h2 className="font-bold italic text-white">Exportar Datos</h2>
+        </div>
+        <div className="flex flex-col gap-3 px-4 py-3">
+          <p className="text-sm text-gray-600">
+            Tus datos financieros son tuyos — descargalos cuando quieras, sin depender de esta app.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={exportRecords}
+              className="flex items-center gap-2 border-2 border-black bg-black px-3 py-1.5 text-xs font-bold text-white hover:bg-gray-800"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Registros actuales (CSV)
+            </button>
+            <button
+              onClick={exportMovements}
+              className="flex items-center gap-2 border-2 border-black px-3 py-1.5 text-xs font-bold hover:bg-gray-100"
+            >
+              <Download className="h-3.5 w-3.5" />
+              Historial de movimientos (CSV)
+            </button>
+          </div>
         </div>
       </div>
 

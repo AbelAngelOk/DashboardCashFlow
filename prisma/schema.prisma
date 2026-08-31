@@ -143,8 +143,24 @@ model User {
   incomeRules        IncomeRule[]
   incomeOccurrences  IncomeOccurrence[]
   assetCategories    AssetCategory[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
+}
+
+// Recuperación de contraseña. Ver PRODUCT_REVIEW.md §3.4 — antes no existía
+// ningún camino de vuelta si te olvidabas la contraseña.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  user      User      @relation(fields: [userId], references: [id])
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 /// Etiqueta libre de activos. Reemplaza al enum AssetType: desde v2.5.0 la

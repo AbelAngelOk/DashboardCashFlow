@@ -188,6 +188,22 @@ export function occurrenceIndexOf(
   return Math.max(0, Math.round(diff / months))
 }
 
+/**
+ * "Cuota N/total — {nombre}" para cronogramas finitos (préstamos, cuotas) —
+ * para ubicarse en la serie de un vistazo. Cronograma indefinido (sueldo,
+ * alquiler sin fin): sin numerar, no hay "total" contra el cual mostrarlo.
+ * Mismo criterio en creación de la ocurrencia, al activarla en el corte y al
+ * cobrarla — para que el número no se pierda en ningún punto del camino.
+ */
+export function formatOccurrenceName(
+  ruleName: string,
+  installmentNumber: number | null,
+  installmentCount: number | null,
+): string {
+  if (installmentNumber == null || installmentCount == null) return ruleName
+  return `Cuota ${installmentNumber}/${installmentCount} — ${ruleName}`
+}
+
 // ── Presets del tipo INCOME_STREAM ────────────────────────────────────────────
 
 export type IncomePreset = "SALARY" | "LOAN" | "INSTALLMENT" | "CUSTOM"

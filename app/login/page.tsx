@@ -23,7 +23,12 @@ export default function LoginPage() {
     })
     setLoading(false)
     if (result?.error) {
-      setError("Email o contraseña incorrectos")
+      // authorize() en lib/auth.ts tira un mensaje propio para rate limiting
+      // (ver lib/rate-limit.ts) — mostrarlo tal cual en vez del genérico, si
+      // no es el caso genérico de credenciales inválidas.
+      setError(
+        result.error === "CredentialsSignin" ? "Email o contraseña incorrectos" : result.error,
+      )
     } else {
       router.push("/")
       router.refresh()
@@ -73,6 +78,11 @@ export default function LoginPage() {
           >
             {loading ? "Ingresando..." : "Ingresar"}
           </button>
+          <p className="text-center text-xs">
+            <Link href="/forgot-password" className="text-gray-500 underline hover:text-black">
+              ¿Olvidaste tu contraseña?
+            </Link>
+          </p>
           <p className="text-center text-xs text-gray-500">
             ¿No tenés cuenta?{" "}
             <Link href="/register" className="font-bold underline hover:text-black">

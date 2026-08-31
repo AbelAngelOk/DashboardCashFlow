@@ -40,6 +40,13 @@ export function addPeriodMonths(key: PeriodKey, n: number): PeriodKey {
   return periodKeyOf(new Date(year, monthIndex + n, 1))
 }
 
+/** Cantidad de meses entre dos períodos (b - a). Positivo si b es posterior a a. */
+export function periodsBetween(a: PeriodKey, b: PeriodKey): number {
+  const pa = parsePeriodKey(a)
+  const pb = parsePeriodKey(b)
+  return (pb.year - pa.year) * 12 + (pb.monthIndex - pa.monthIndex)
+}
+
 /** "2026-08" → "Agosto 2026" */
 export function periodLabel(key: PeriodKey): string {
   const { year, monthIndex } = parsePeriodKey(key)
@@ -106,6 +113,13 @@ export interface CutoffStatus {
   lastCutoffAt?: string
   /** Fecha del próximo corte a futuro, ISO */
   nextCutoffAt: string
+  /**
+   * Cuántos períodos completos quedaron sin cortar entre el último corte y el
+   * pendiente actual (0 = ninguno salteado). Ver CORTE_Y_SNAPSHOTS.md §7: el
+   * corte no filtra por fecha, así que si salteás uno, el próximo corte
+   * mezcla varios meses sin forma de separarlos después.
+   */
+  periodsOverdue: number
 }
 
 export interface CutoffPreview {

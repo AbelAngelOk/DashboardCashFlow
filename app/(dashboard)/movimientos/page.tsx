@@ -12,7 +12,7 @@ const actionStyles: Record<Movement["action"], string> = {
 }
 
 export default function MovimientosPage() {
-  const { movements, updateComment } = useFinance()
+  const { movements, movementsLoading, updateComment } = useFinance()
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -20,7 +20,9 @@ export default function MovimientosPage() {
         <History className="h-5 w-5" />
         <span className="text-lg font-bold">Movimientos</span>
       </div>
-      {movements.length === 0 ? (
+      {movementsLoading ? (
+        <div className="py-16 text-center text-sm text-gray-400">Cargando...</div>
+      ) : movements.length === 0 ? (
         <p className="text-sm text-gray-500">
           Aún no hay movimientos registrados. Crea, edita o elimina un registro
           para verlo aquí.

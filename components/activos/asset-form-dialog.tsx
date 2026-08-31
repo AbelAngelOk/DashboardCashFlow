@@ -32,7 +32,8 @@ import {
   type AssetPreset,
 } from "@/lib/asset-categories"
 import { RECURRENCE_TYPE_LABELS, type RecurrenceType } from "@/lib/income-streams"
-import { createAsset } from "@/lib/assets-actions"
+import { createAsset, addMovement } from "@/lib/assets-actions"
+import type { FuturesMovementMetadata } from "@/lib/assets"
 import { createLinkedGasto } from "@/lib/gasto-actions"
 import { createIncomeRule, setIncomeStreamValueMode } from "@/lib/income-actions"
 import { createAssetCategory, ensureAssetCategories } from "@/lib/asset-category-actions"
@@ -47,6 +48,44 @@ interface RuleDraft {
   expectedAmount: string
   currency: Currency
   reducesPrincipal: boolean
+}
+
+interface PositionDraft {
+  id: string
+  type: "LONG" | "SHORT"
+  qty: string
+  price: string
+  date: string
+  description: string
+}
+
+function newPosition(): PositionDraft {
+  return {
+    id: crypto.randomUUID(),
+    type: "LONG",
+    qty: "",
+    price: "",
+    date: new Date().toISOString().slice(0, 10),
+    description: "",
+  }
+}
+
+/**
+ * Cantidad neta y precio promedio a partir de operaciones LONG/SHORT — mismo
+ * criterio que avgEntry() en futures-panel.tsx: SHORT resta de la cantidad
+ * neta (redujo la posición), pero el precio promedio se calcula solo sobre
+ * las entradas LONG (es "cuánto pagué en promedio por lo que tengo", un SHORT
+ * no tiene un precio de compra en ese sentido).
+ */
+function netFromPositions(positions: PositionDraft[]): { qty: number; avgPrice: number } {
+  const longs = positions.filter((p) => p.type === "LONG" && p.qty && p.price)
+  const shorts = positions.filter((p) => p.type === "SHORT" && p.qty)
+  const longQty = longs.reduce((s, p) => s + Number(p.qty), 0)
+  const shortQty = shorts.reduce((s, p) => s + Number(p.qty), 0)
+  const avgPrice = longQty > 0
+    ? longs.reduce((s, p) => s + Number(p.qty) * Number(p.price), 0) / longQty
+    : 0
+  return { qty: longQty - shortQty, avgPrice }
 }
 
 interface AssetFormDialogProps {
@@ -79,7 +118,7 @@ export function AssetFormDialog({
   parentId,
   defaultName = "",
 }: AssetFormDialogProps) {
-  const { reload } = useFinance()
+  const { records, reload } = useFinance()
   const { settings } = useSettings()
 
   const [step, setStep] = useState<"preset" | "details">("preset")
@@ -103,6 +142,11 @@ export function AssetFormDialog({
   // Unidades
   const [qty, setQty] = useState("")
   const [avgPrice, setAvgPrice] = useState("")
+  // Modo alternativo: cargar por operaciones LONG/SHORT en vez de qty+precio
+  // a mano — igual que ya funciona en Futuros. qty/avgPrice/amount se
+  // recalculan solos a partir de estas operaciones cuando está activo.
+  const [loadByOperations, setLoadByOperations] = useState(false)
+  const [positions, setPositions] = useState<PositionDraft[]>([newPosition()])
 
   // Reglas de ingreso
   const [rules, setRules] = useState<RuleDraft[]>([])
@@ -146,6 +190,8 @@ export function AssetFormDialog({
     setPositionTracking(false)
     setQty("")
     setAvgPrice("")
+    setLoadByOperations(false)
+    setPositions([newPosition()])
     setRules([])
     setCreateGasto(false)
     setSaving(false)
@@ -190,6 +236,21 @@ export function AssetFormDialog({
     if (v !== "" && qty !== "") setAmount(String(Number(qty) * Number(v)))
   }
 
+  // Recalcula qty/avgPrice/amount solos a partir de las operaciones cargadas.
+  useEffect(() => {
+    if (!loadByOperations) return
+    const { qty: netQty, avgPrice: netPrice } = netFromPositions(positions)
+    setQty(netQty > 0 ? String(netQty) : "")
+    setAvgPrice(netPrice > 0 ? String(netPrice) : "")
+    setAmount(netQty > 0 && netPrice > 0 ? String(netQty * netPrice) : "")
+  }, [loadByOperations, positions])
+
+  const updatePosition = (id: string, field: keyof PositionDraft, value: string) =>
+    setPositions((prev) => prev.map((p) => (p.id === id ? { ...p, [field]: value } : p)))
+  const addPosition = () => setPositions((prev) => [...prev, newPosition()])
+  const removePosition = (id: string) =>
+    setPositions((prev) => (prev.length > 1 ? prev.filter((p) => p.id !== id) : prev))
+
   const updateRule = (id: string, field: keyof RuleDraft, value: string | boolean) =>
     setRules((prev) => prev.map((r) => (r.id === id ? { ...r, [field]: value } : r)))
   const addRule = () =>
@@ -200,12 +261,19 @@ export function AssetFormDialog({
   const rulesOk =
     !hasCap("income") || rules.some((r) => r.name.trim() && Number(r.expectedAmount) > 0)
   const categoryOk = categoryId !== NEW_CATEGORY || newCategoryName.trim() !== ""
+  const duplicateName =
+    name.trim() !== "" &&
+    records.some((r) => r.type === "activo" && r.name.trim().toLowerCase() === name.trim().toLowerCase())
+  const positionsOk =
+    !loadByOperations || positions.some((p) => p.qty !== "" && (p.type === "SHORT" || p.price !== ""))
   const canSave =
     name.trim() !== "" &&
     (!needsAmount || amount !== "") &&
     !calcMismatch &&
     rulesOk &&
-    categoryOk
+    categoryOk &&
+    !duplicateName &&
+    positionsOk
 
   const buildMetadata = (): Record<string, unknown> | undefined => {
     const meta: Record<string, unknown> = {}
@@ -226,7 +294,20 @@ export function AssetFormDialog({
         finalCategoryId = categoryId
       }
 
-      const initialAmount = valueIsProjection ? 0 : Number(amount)
+      // NumericInput solo confirma su valor al perder el foco (ver
+      // components/ui/numeric-input.tsx), y qty/avgPrice/amount se derivan de
+      // `positions` vía un useEffect que corre recién después del próximo
+      // paint. Si el usuario tipea el último campo y clickea "Crear activo"
+      // sin pasar el foco por otro lado antes, ese useEffect puede no haber
+      // corrido todavía. Por eso acá se recalcula directo desde `positions`
+      // en vez de confiar en el estado derivado — así el guardado siempre ve
+      // el valor real, no uno un paint atrasado.
+      const net = loadByOperations ? netFromPositions(positions) : null
+      const finalQty = loadByOperations ? net!.qty : Number(qty)
+      const finalAvgPrice = loadByOperations ? net!.avgPrice : Number(avgPrice)
+      const finalAmount = loadByOperations ? finalQty * finalAvgPrice : Number(amount)
+
+      const initialAmount = valueIsProjection ? 0 : finalAmount
 
       const id = await createAsset({
         name: name.trim(),
@@ -235,11 +316,12 @@ export function AssetFormDialog({
         amount: initialAmount,
         currency,
         tracksQuantity: hasCap("quantity"),
-        currentQty: hasCap("quantity") && qty ? Number(qty) : undefined,
-        avgBuyPrice: hasCap("quantity") && avgPrice ? Number(avgPrice) : undefined,
+        currentQty: hasCap("quantity") && finalQty ? finalQty : undefined,
+        avgBuyPrice: hasCap("quantity") && finalAvgPrice ? finalAvgPrice : undefined,
         description: description.trim() || undefined,
         parentId,
         metadata: buildMetadata(),
+        skipInitialMovement: loadByOperations,
       })
 
       if (createGasto && initialAmount > 0) {
@@ -249,6 +331,28 @@ export function AssetFormDialog({
           currency,
           linkedTo: id,
         }).catch(console.error)
+      }
+
+      // Operaciones cargadas: quedan como movimientos individuales del
+      // activo (mismo patrón que "Nueva posición" en Futuros), no solo como
+      // el qty/precio agregado que ya se guardó arriba.
+      if (loadByOperations) {
+        for (const p of positions) {
+          if (!p.qty || (p.type === "LONG" && !p.price)) continue
+          const meta: FuturesMovementMetadata = { positionType: p.type }
+          await addMovement({
+            recordId: id,
+            movementType: "BUY",
+            amount: Number(p.qty) * Number(p.price || 0),
+            quantity: Number(p.qty),
+            unitPrice: p.price ? Number(p.price) : undefined,
+            currency,
+            description: p.description || `Posición ${p.type}`,
+            operationDate: new Date(p.date + "T12:00:00"),
+            metadata: meta,
+            skipJournalEntry: true,
+          }).catch(console.error)
+        }
       }
 
       if (hasCap("income")) {
@@ -348,8 +452,13 @@ export function AssetFormDialog({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ej: Departamento Palermo"
-                  className="border-2 border-black focus-visible:ring-0"
+                  className={`border-2 focus-visible:ring-0 ${duplicateName ? "border-amber-500" : "border-black"}`}
                 />
+                {duplicateName && (
+                  <p className="text-xs text-amber-700">
+                    Ya existe un activo con este nombre. Elegí otro para poder distinguirlos.
+                  </p>
+                )}
               </div>
 
               {/* Categoría: etiqueta libre, sin comportamiento asociado */}
@@ -484,40 +593,132 @@ export function AssetFormDialog({
               {/* Unidades */}
               {hasCap("quantity") && (
                 <>
-                  <div className="flex gap-3">
-                    <div className="flex flex-1 flex-col gap-1">
-                      <Label className="text-xs font-bold uppercase">Ticker</Label>
-                      <Input
-                        value={ticker}
-                        onChange={(e) => setTicker(e.target.value)}
-                        placeholder="AAPL, BTCUSDT"
-                        className="border-2 border-black focus-visible:ring-0"
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col gap-1">
-                      <Label className="text-xs font-bold uppercase">Cantidad</Label>
-                      <NumericInput
-                        value={qty}
-                        onChange={handleQtyChange}
-                        placeholder="0"
-                        className={`border-2 focus-visible:ring-0 ${calcMismatch ? "border-amber-500" : "border-black"}`}
-                      />
-                    </div>
-                    <div className="flex flex-1 flex-col gap-1">
-                      <Label className="text-xs font-bold uppercase">Precio prom.</Label>
-                      <NumericInput
-                        value={avgPrice}
-                        onChange={handlePriceChange}
-                        placeholder="0.00"
-                        className={`border-2 focus-visible:ring-0 ${calcMismatch ? "border-amber-500" : "border-black"}`}
-                      />
-                    </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="text-xs font-bold uppercase">Ticker</Label>
+                    <Input
+                      value={ticker}
+                      onChange={(e) => setTicker(e.target.value)}
+                      placeholder="AAPL, BTCUSDT"
+                      className="border-2 border-black focus-visible:ring-0"
+                    />
                   </div>
-                  {calcMismatch && (
-                    <p className="text-xs text-amber-700">
-                      El valor ({amount}) no coincide con cantidad × precio (
-                      {(qtyNum * priceNum).toFixed(2)}). Corregí uno de los tres campos.
-                    </p>
+
+                  <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-600">
+                    <input
+                      type="checkbox"
+                      checked={loadByOperations}
+                      onChange={(e) => setLoadByOperations(e.target.checked)}
+                      className="rounded"
+                    />
+                    Cargar por operaciones (LONG/SHORT) en vez de cantidad + precio a mano
+                  </label>
+
+                  {!loadByOperations ? (
+                    <>
+                      <div className="flex gap-3">
+                        <div className="flex flex-1 flex-col gap-1">
+                          <Label className="text-xs font-bold uppercase">Cantidad</Label>
+                          <NumericInput
+                            value={qty}
+                            onChange={handleQtyChange}
+                            placeholder="0"
+                            className={`border-2 focus-visible:ring-0 ${calcMismatch ? "border-amber-500" : "border-black"}`}
+                          />
+                        </div>
+                        <div className="flex flex-1 flex-col gap-1">
+                          <Label className="text-xs font-bold uppercase">Precio prom.</Label>
+                          <NumericInput
+                            value={avgPrice}
+                            onChange={handlePriceChange}
+                            placeholder="0.00"
+                            className={`border-2 focus-visible:ring-0 ${calcMismatch ? "border-amber-500" : "border-black"}`}
+                          />
+                        </div>
+                      </div>
+                      {calcMismatch && (
+                        <p className="text-xs text-amber-700">
+                          El valor ({amount}) no coincide con cantidad × precio (
+                          {(qtyNum * priceNum).toFixed(2)}). Corregí uno de los tres campos.
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex flex-col gap-2 border border-gray-200 p-3">
+                      {positions.map((p) => (
+                        <div key={p.id} className="flex flex-wrap items-end gap-2">
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-[10px] font-bold uppercase text-gray-500">Tipo</Label>
+                            <Select
+                              value={p.type}
+                              onValueChange={(v) => updatePosition(p.id, "type", v)}
+                            >
+                              <SelectTrigger className="h-8 w-24 border-2 border-black text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="LONG">LONG</SelectItem>
+                                <SelectItem value="SHORT">SHORT</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-[10px] font-bold uppercase text-gray-500">Cantidad</Label>
+                            <NumericInput
+                              value={p.qty}
+                              onChange={(v) => updatePosition(p.id, "qty", v)}
+                              placeholder="0"
+                              className="h-8 w-20 border-2 border-black text-xs"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-[10px] font-bold uppercase text-gray-500">Precio</Label>
+                            <NumericInput
+                              value={p.price}
+                              onChange={(v) => updatePosition(p.id, "price", v)}
+                              placeholder="0.00"
+                              className="h-8 w-24 border-2 border-black text-xs"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-1">
+                            <Label className="text-[10px] font-bold uppercase text-gray-500">Fecha</Label>
+                            <Input
+                              type="date"
+                              value={p.date}
+                              onChange={(e) => updatePosition(p.id, "date", e.target.value)}
+                              className="h-8 w-32 border-2 border-black text-xs"
+                            />
+                          </div>
+                          <div className="flex flex-1 flex-col gap-1">
+                            <Label className="text-[10px] font-bold uppercase text-gray-500">Nota</Label>
+                            <Input
+                              value={p.description}
+                              onChange={(e) => updatePosition(p.id, "description", e.target.value)}
+                              placeholder="Opcional"
+                              className="h-8 border-2 border-black text-xs"
+                            />
+                          </div>
+                          <button
+                            onClick={() => removePosition(p.id)}
+                            disabled={positions.length === 1}
+                            className="mb-1 text-gray-400 hover:text-rose-700 disabled:opacity-30"
+                            aria-label="Quitar operación"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={addPosition}
+                        className="flex items-center gap-1 self-start text-xs font-semibold text-gray-600 hover:text-black"
+                      >
+                        <Plus className="h-3 w-3" /> Agregar operación
+                      </button>
+                      <p className="border-t border-gray-200 pt-2 text-xs text-gray-500">
+                        Cantidad neta: <strong>{qty || 0}</strong> · Precio promedio:{" "}
+                        <strong>{avgPrice ? Number(avgPrice).toFixed(2) : "—"}</strong> · Valor:{" "}
+                        <strong>{amount ? Number(amount).toFixed(2) : "—"}</strong> {currency}
+                      </p>
+                    </div>
                   )}
                 </>
               )}

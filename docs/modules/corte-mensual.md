@@ -1,6 +1,6 @@
 ---
-Versión: 2.3.0
-Última actualización: 2026-08-17
+Versión: 2.4.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -10,6 +10,8 @@ Estado: Activo
 ## Objetivo
 
 Cerrar un período mensual en una sola operación confirmada por el usuario: archivar los ingresos y gastos del mes que sale, y dejar preparados los del mes entrante a partir de las obligaciones y los activos que tienen flujos configurados.
+
+**v2.6.0** (ver `docs/CHANGELOG.md` y `CORTE_Y_SNAPSHOTS.md` en la raíz): el snapshot pre-corte pasó de opcional a obligatorio — es la única forma de deshacer un corte confirmado por error. Nuevo campo `CutoffStatus.periodsOverdue` avisa (badge + banner en el diálogo) cuando quedaron períodos sin cortar en el medio, porque el corte no filtra por fecha y esos meses se mezclan sin poder separarse después.
 
 **Punto de entrada**: Dashboard (`/`) — pop-up automático + botón manual
 **Configuración**: `/configuracion` → sección "Corte Mensual"

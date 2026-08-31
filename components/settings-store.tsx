@@ -150,13 +150,9 @@ export function SettingsProvider({ children }: { children: ReactNode }) {
       }
       rates[base] = 1
 
-      const now = new Date().toLocaleDateString("es-ES", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
+      // ISO, no formateado — para poder calcular antigüedad (ver ratesAgeDays
+      // en lib/finance.ts). El formato legible se arma al mostrarlo.
+      const now = new Date().toISOString()
 
       setSettings((prev) => {
         const next = { ...prev, exchangeRates: rates, ratesLastUpdated: now }

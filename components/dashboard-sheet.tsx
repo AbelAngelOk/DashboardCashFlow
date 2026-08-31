@@ -2,7 +2,21 @@
 
 import { useState, useEffect, useCallback } from "react"
 import Link from "next/link"
-import { Plus, Pencil, Trash2, Check, X, Network, Eye, ChevronDown, ChevronRight } from "lucide-react"
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  Network,
+  Eye,
+  ChevronDown,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  ShoppingCart,
+  FileText,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
@@ -27,6 +41,9 @@ import {
   currencies,
   defaultCurrency,
   formatAmount,
+  ratesAgeDays,
+  formatRatesAge,
+  RATES_STALE_AFTER_DAYS,
 } from "@/lib/finance"
 import type { FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import { GroupValueDisplay } from "@/components/group-value-display"
@@ -123,6 +140,8 @@ export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT" | "EXTRACT"
 
 interface DashboardSheetProps {
   records: FinancialRecord[]
+  /** Todavía no llegaron records/snapshots de la DB — cada tabla muestra su propio skeleton. */
+  loading?: boolean
   readOnly?: boolean
   gastoGroups?: FlowGroupWithMembers[]
   ingresoGroups?: FlowGroupWithMembers[]
@@ -167,6 +186,56 @@ function CurrencySelect({
   )
 }
 
+// ── Loading / empty states (por tabla) ──────────────────────────────────────
+//
+// Antes AppShell tapaba TODO el dashboard con un spinner único hasta que
+// records+snapshots+audit log completo llegaban de la DB. Ahora el shell y
+// la estructura de cada tabla se pintan de inmediato; esto es lo que cada
+// SectionTable muestra mientras espera SU parte de los datos, y cuando esos
+// datos ya llegaron pero están genuinamente vacíos (dos casos distintos que
+// antes se veían idénticos: una tabla vacía).
+
+const EMPTY_STATE_ICON: Record<RecordType, typeof TrendingUp> = {
+  ingreso: TrendingDown,
+  gasto: ShoppingCart,
+  activo: TrendingUp,
+  pasivo: FileText,
+}
+
+const EMPTY_STATE_TEXT: Record<RecordType, string> = {
+  ingreso: "Sin ingresos registrados",
+  gasto: "Sin gastos registrados",
+  activo: "Sin activos registrados",
+  pasivo: "Sin obligaciones registradas",
+}
+
+function SectionTableSkeleton() {
+  return (
+    <div className="animate-pulse">
+      {[0, 1, 2].map((i) => (
+        <div key={i} className="flex border-b border-black/10 text-sm">
+          <div className="flex-1 border-r border-black/10 px-2 py-2">
+            <div className="h-3 rounded bg-gray-200" style={{ width: `${55 - i * 12}%` }} />
+          </div>
+          <div className="w-36 border-r border-black/10 px-2 py-2">
+            <div className="ml-auto h-3 w-16 rounded bg-gray-200" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SectionTableEmpty({ type }: { type: RecordType }) {
+  const Icon = EMPTY_STATE_ICON[type]
+  return (
+    <div className="flex flex-col items-center gap-2 border-b border-black/10 py-8 text-center">
+      <Icon className="h-8 w-8 text-gray-200" />
+      <p className="text-xs text-gray-400">{EMPTY_STATE_TEXT[type]}</p>
+    </div>
+  )
+}
+
 // ── SectionTable ─────────────────────────────────────────────────────────────
 
 interface SectionTableProps {
@@ -174,6 +243,8 @@ interface SectionTableProps {
   type: RecordType
   records: FinancialRecord[]
   allRecords: FinancialRecord[]
+  /** Todavía no llegaron records de la DB: muestra skeleton en vez de "vacío". */
+  loading?: boolean
   valueLabel: string
   linkType?: RecordType
   linkLabel?: string
@@ -206,6 +277,7 @@ function SectionTable({
   type,
   records,
   allRecords,
+  loading,
   valueLabel,
   linkType,
   linkLabel,
@@ -386,6 +458,17 @@ function SectionTable({
     ? records.filter((r) => !r.parentId)
     : records
 
+  const hasFlowGroupContent = Boolean(
+    flowGroups && flowGroups.length > 0 && (type === "gasto" || type === "ingreso"),
+  )
+  // Genuinamente sin datos: no confundir con "todavía no llegó de la DB" (loading).
+  const isEmpty =
+    !loading &&
+    displayRecords.length === 0 &&
+    !hasFlowGroupContent &&
+    !(extraRows && extraRows.length > 0) &&
+    newRows.length === 0
+
   const testId =
     type === "ingreso"
       ? "dashboard-income-table"
@@ -399,7 +482,7 @@ function SectionTable({
     <div data-testid={testId} className="border-2 border-black">
       <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
         <span className="font-bold italic text-white">{title}</span>
-        {!readOnly && (
+        {!readOnly && !loading && (
           <Button
             size="sm"
             variant="ghost"
@@ -426,6 +509,12 @@ function SectionTable({
         {!readOnly && <div className="w-20 px-1 py-1 text-center">Acción</div>}
       </div>
 
+      {loading ? (
+        <SectionTableSkeleton />
+      ) : isEmpty ? (
+        <SectionTableEmpty type={type} />
+      ) : (
+        <>
       {/* Flow groups (gasto / ingreso user-defined groups) */}
       {flowGroups && flowGroups.length > 0 && (type === "gasto" || type === "ingreso") &&
         flowGroups.map((group) => {
@@ -764,6 +853,8 @@ function SectionTable({
           )}
         </div>
       ))}
+        </>
+      )}
 
       {/* New editable rows */}
       {!readOnly &&
@@ -837,7 +928,11 @@ function SectionTable({
           Total {title}:
         </div>
         <div className="flex-1 px-2 py-1">
-          <TotalsBlock records={totalRecords ?? records} className="text-right" />
+          {loading ? (
+            <span className="block text-right text-gray-300">—</span>
+          ) : (
+            <TotalsBlock records={totalRecords ?? records} className="text-right" />
+          )}
         </div>
       </div>
 
@@ -1002,6 +1097,7 @@ function SectionTable({
 
 export function DashboardSheet({
   records,
+  loading = false,
   readOnly = false,
   gastoGroups,
   ingresoGroups,
@@ -1016,8 +1112,9 @@ export function DashboardSheet({
   onAddAsset,
 }: DashboardSheetProps) {
   const { settings } = useSettings()
-  const { convertCurrencies, baseCurrency, exchangeRates } = settings
-  const { obligations } = useObligations()
+  const { convertCurrencies, baseCurrency, exchangeRates, ratesLastUpdated } = settings
+  const { obligations, loading: obligationsLoading } = useObligations()
+  const staleRates = convertCurrencies && (ratesAgeDays(ratesLastUpdated) === null || (ratesAgeDays(ratesLastUpdated) ?? 0) > RATES_STALE_AFTER_DAYS)
 
   const obligationExtraRows: ExtraRow[] = readOnly
     ? []
@@ -1095,6 +1192,19 @@ export function DashboardSheet({
   const convertedGastos = calculateTotalsConverted(gastos, baseCurrency, exchangeRates)
   const convertedFlujo = convertedIngresos - convertedGastos
 
+  // ── Libertad Financiera ──────────────────────────────────────────────────────
+  // La métrica central del formato CASHFLOW (Kiyosaki) en el que se basa este
+  // dashboard: qué porción de tu gasto ya está cubierta por ingreso que viene
+  // de activos (linkedTo -> un record type "activo", el mismo vínculo que ya
+  // usa la columna "Activo" de la tabla Ingresos), no de tu trabajo. Ver
+  // PRODUCT_REVIEW.md §3.1 — antes se calculaba implícitamente pero nunca se
+  // mostraba en ningún lado.
+  const activoIds = new Set(records.filter((r) => r.type === "activo").map((r) => r.id))
+  const ingresosPasivos = ingresos.filter((r) => r.linkedTo && activoIds.has(r.linkedTo))
+  const convertedIngresosPasivos = calculateTotalsConverted(ingresosPasivos, baseCurrency, exchangeRates)
+  const libertadFinancieraPct =
+    convertedGastos > 0 ? (convertedIngresosPasivos / convertedGastos) * 100 : null
+
   return (
     <div>
       {/* Estado de Resultados */}
@@ -1109,6 +1219,7 @@ export function DashboardSheet({
               type="ingreso"
               records={ingresos}
               allRecords={records}
+              loading={loading}
               valueLabel="Flujo de Caja"
               linkType="activo"
               linkLabel="Activo"
@@ -1123,6 +1234,7 @@ export function DashboardSheet({
               type="gasto"
               records={gastos}
               allRecords={records}
+              loading={loading}
               valueLabel="Monto"
               readOnly={readOnly}
               flowGroups={gastoGroups}
@@ -1137,7 +1249,55 @@ export function DashboardSheet({
             <div className="border-b-2 border-black bg-black px-2 py-1 text-center font-bold italic text-white">
               Auditor
             </div>
+            {staleRates && (
+              <div
+                data-testid="stale-rates-warning"
+                className="border-b-2 border-amber-500 bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800"
+              >
+                Tipos de cambio actualizados {formatRatesAge(ratesLastUpdated)} — los totales
+                convertidos de acá abajo pueden no reflejar la realidad. Actualizalos en
+                Configuración.
+              </div>
+            )}
             <div className="space-y-4 p-3">
+              {/* Libertad Financiera — % del gasto cubierto por ingreso de activos */}
+              <div data-testid="libertad-financiera" className="border-2 border-black bg-gray-50 p-2">
+                <div className="text-xs font-bold uppercase tracking-wide text-gray-600">
+                  Libertad Financiera
+                </div>
+                {loading ? (
+                  <div className="mt-1 h-6 w-16 animate-pulse rounded bg-gray-200" />
+                ) : libertadFinancieraPct === null ? (
+                  <p className="mt-1 text-xs text-gray-400">
+                    Sin gastos activos todavía — no hay contra qué medirlo.
+                  </p>
+                ) : (
+                  <>
+                    <div
+                      className={`mt-1 text-2xl font-bold ${
+                        libertadFinancieraPct >= 100 ? "text-emerald-700" : "text-black"
+                      }`}
+                    >
+                      {libertadFinancieraPct.toFixed(0)}%
+                    </div>
+                    <div className="mt-1 h-2 w-full border border-black bg-white">
+                      <div
+                        className={`h-full ${libertadFinancieraPct >= 100 ? "bg-emerald-600" : "bg-black"}`}
+                        style={{ width: `${Math.min(100, libertadFinancieraPct)}%` }}
+                      />
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      {formatAmount(convertedIngresosPasivos, baseCurrency)} {baseCurrency} de ingreso de
+                      activos {" "}
+                      {libertadFinancieraPct >= 100 ? "cubren y superan" : "cubren"} tu gasto total
+                      {!convertCurrencies && (
+                        <span className="text-gray-400"> (convertido a {baseCurrency} para poder comparar)</span>
+                      )}
+                    </p>
+                  </>
+                )}
+              </div>
+
               {/* Total Ingresos */}
               <div>
                 <div className="text-sm font-bold">Total Ingresos:</div>
@@ -1218,6 +1378,7 @@ export function DashboardSheet({
             type="activo"
             records={activos}
             allRecords={records}
+            loading={loading}
             totalRecords={activosForTotal}
             valueLabel="Valor"
             readOnly={readOnly}
@@ -1235,6 +1396,10 @@ export function DashboardSheet({
             type="pasivo"
             records={pasivos}
             allRecords={records}
+            // Esta tabla mezcla records (pasivos) con obligations (extraRows) —
+            // dos fuentes independientes que cargan en paralelo; no se puede dar
+            // por "lista" hasta que ambas resuelvan.
+            loading={loading || obligationsLoading}
             valueLabel="Valor"
             readOnly={readOnly}
             extraRows={obligationExtraRows}

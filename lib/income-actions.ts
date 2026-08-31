@@ -8,6 +8,7 @@ import { createJournalEntry } from "./journal-actions"
 import { addMonths, ruleDatesInWindow, type ObligationRule, type RecurrenceType } from "./obligations"
 import {
   computeAnnualProjection,
+  formatOccurrenceName,
   occurrenceAmount,
   occurrenceIndexOf,
   valueModeOf,
@@ -100,17 +101,17 @@ interface OccurrenceRow {
 
 function mapOccurrenceRow(
   o: OccurrenceRow,
-  rule?: { name: string; reducesPrincipal: boolean; settlement: string } | string,
+  rule?: { name: string; reducesPrincipal: boolean; settlement: string; installmentCount?: number | null } | string,
   ingresoActive = false,
 ): IncomeOccurrence {
   const r = typeof rule === "string" || rule == null
-    ? { name: "", reducesPrincipal: false, settlement: "CASH" }
+    ? { name: "", reducesPrincipal: false, settlement: "CASH", installmentCount: null }
     : rule
   return {
     id: o.id,
     ruleId: o.ruleId,
     recordId: o.recordId,
-    ruleName: r.name,
+    ruleName: formatOccurrenceName(r.name, o.installmentNumber, r.installmentCount ?? null),
     expectedDate: o.expectedDate.toISOString(),
     expectedAmount: toNumber(o.expectedAmount),
     actualAmount: o.actualAmount != null ? toNumber(o.actualAmount) : undefined,
@@ -230,10 +231,10 @@ async function ensureIncomeWindow(userId: string, rule: RuleShape): Promise<void
   if (entries.length === 0) return
 
   await prisma.record.createMany({
-    data: entries.map(({ ingresoId, date, amount }) => ({
+    data: entries.map(({ ingresoId, date, amount, index }) => ({
       id: ingresoId,
       type: "ingreso",
-      name: `[Programado] ${rule.name}`,
+      name: `[Programado] ${formatOccurrenceName(rule.name, finite ? index + 1 : null, rule.installmentCount ?? null)}`,
       amount,
       currency: rule.currency,
       userId,
@@ -340,7 +341,7 @@ export async function loadIncomeRules(recordId: string): Promise<IncomeStreamDat
   const occurrences = await prisma.incomeOccurrence.findMany({
     where: { userId, recordId },
     orderBy: { expectedDate: "asc" },
-    include: { rule: { select: { name: true, reducesPrincipal: true, settlement: true } } },
+    include: { rule: { select: { name: true, reducesPrincipal: true, settlement: true, installmentCount: true } } },
   })
 
   // Saber si el corte ya activó el ingreso de cada ocurrencia
@@ -628,7 +629,7 @@ export async function collectIncomeOccurrence(
   if (!(actualAmount > 0)) throw new Error("El monto cobrado debe ser mayor a 0")
 
   const currency = occ.currency as Currency
-  const ruleName = occ.rule.name
+  const ruleName = formatOccurrenceName(occ.rule.name, occ.installmentNumber, occ.rule.installmentCount)
   const assetName = occ.record.name
   const inKind = occ.rule.settlement === "IN_KIND"
 

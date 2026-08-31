@@ -115,6 +115,14 @@ export interface BondMetadata {
 
 export interface FuturesMovementMetadata {
   positionType: "LONG" | "SHORT"
+  /** Multiplicador de apalancamiento — 1 (o sin definir) = sin apalancar. */
+  leverage?: number
+  /** Cierre individual de esta posición puntual (independiente del liquidated a nivel activo). */
+  closed?: boolean
+  closePrice?: number
+  closeDate?: string
+  /** P&L de esta posición: (precio salida - precio entrada) * cantidad * apalancamiento, con signo según LONG/SHORT. */
+  pnl?: number
 }
 
 export interface FuturesMetadata {

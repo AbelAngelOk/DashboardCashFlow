@@ -62,6 +62,13 @@ export async function createAsset(data: {
   description?: string
   parentId?: string
   metadata?: unknown
+  /**
+   * Si el caller va a crear sus propios movimientos (ej: operaciones LONG/SHORT
+   * individuales que ya suman `amount`), saltea el DEPOSIT + asiento contable
+   * de "Inversión inicial" de acá — si no, el historial del activo queda con
+   * el doble del monto real (el agregado + cada operación individual).
+   */
+  skipInitialMovement?: boolean
 }): Promise<string> {
   const userId = await getUserId()
   const id = crypto.randomUUID()
@@ -83,19 +90,24 @@ export async function createAsset(data: {
       userId,
     },
   })
-  // First movement: initial deposit
-  await prisma.financialMovement.create({
-    data: {
-      id: crypto.randomUUID(),
-      userId,
-      recordId: id,
-      movementType: "DEPOSIT",
-      amount: data.amount,
-      currency: data.currency,
-      description: "Inversión inicial",
-      operationDate: new Date(),
-    },
-  })
+  // First movement: initial deposit — salteado si el caller va a crear sus
+  // propios movimientos (para no duplicar el historial visualmente), pero el
+  // asiento contable de "Inversión inicial" SIEMPRE se postea por el total:
+  // es plata real invertida sin importar en cuántas operaciones se partió.
+  if (!data.skipInitialMovement) {
+    await prisma.financialMovement.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId,
+        recordId: id,
+        movementType: "DEPOSIT",
+        amount: data.amount,
+        currency: data.currency,
+        description: "Inversión inicial",
+        operationDate: new Date(),
+      },
+    })
+  }
   if (data.amount > 0) {
     await createJournalEntry(userId, {
       description: `Inversión inicial: ${data.name}`,

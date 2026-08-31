@@ -3,9 +3,33 @@
 import Link from "next/link"
 import { Camera, ArrowRight } from "lucide-react"
 import { useFinance } from "@/components/finance-store"
+import { useSettings } from "@/components/settings-store"
+import { calculateTotalsConverted, formatAmount } from "@/lib/finance"
+import { TrendChart } from "@/components/ui/trend-chart"
 
 export default function SnapshotsPage() {
-  const { snapshots } = useFinance()
+  const { snapshots, loading } = useFinance()
+  const { settings } = useSettings()
+  const { baseCurrency, exchangeRates } = settings
+
+  // Orden cronológico (la lista viene más-reciente-primero desde la DB).
+  const chronological = [...snapshots].reverse()
+  const netWorthPoints = chronological.map((s) => {
+    const activos = s.records.filter((r) => r.type === "activo" && r.amount !== 0)
+    const pasivos = s.records.filter((r) => r.type === "pasivo")
+    const netWorth =
+      calculateTotalsConverted(activos, baseCurrency, exchangeRates) -
+      calculateTotalsConverted(pasivos, baseCurrency, exchangeRates)
+    return { label: s.name, value: netWorth }
+  })
+  const cashFlowPoints = chronological.map((s) => {
+    const ingresos = s.records.filter((r) => r.type === "ingreso")
+    const gastos = s.records.filter((r) => r.type === "gasto")
+    const flujo =
+      calculateTotalsConverted(ingresos, baseCurrency, exchangeRates) -
+      calculateTotalsConverted(gastos, baseCurrency, exchangeRates)
+    return { label: s.name, value: flujo }
+  })
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -14,12 +38,35 @@ export default function SnapshotsPage() {
         <span className="text-lg font-bold">Snapshots</span>
       </div>
 
-      {snapshots.length === 0 ? (
+      {loading ? (
+        <div className="py-16 text-center text-sm text-gray-400">Cargando...</div>
+      ) : snapshots.length === 0 ? (
         <p className="text-sm text-gray-500">
           Aún no hay snapshots guardados. Tomá uno desde el Dashboard.
         </p>
       ) : (
         <>
+          {snapshots.length >= 2 && (
+            <div className="mb-6 grid gap-4 sm:grid-cols-2">
+              <div data-testid="snapshots-trend-networth" className="border-2 border-black p-3">
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-600">
+                  Patrimonio neto (activos − pasivos)
+                </p>
+                <TrendChart points={netWorthPoints} formatValue={(v) => `${formatAmount(v, baseCurrency)} ${baseCurrency}`} />
+              </div>
+              <div data-testid="snapshots-trend-cashflow" className="border-2 border-black p-3">
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-600">
+                  Flujo de caja (ingresos − gastos)
+                </p>
+                <TrendChart points={cashFlowPoints} formatValue={(v) => `${formatAmount(v, baseCurrency)} ${baseCurrency}`} />
+              </div>
+              <p className="text-[11px] text-gray-400 sm:col-span-2">
+                Convertido a {baseCurrency} con las tasas de cambio actuales — los snapshots viejos
+                no guardan las tasas que regían en ese momento.
+              </p>
+            </div>
+          )}
+
           {/* Mobile: cards */}
           <div className="flex flex-col gap-3 md:hidden">
             {snapshots.map((snap) => (

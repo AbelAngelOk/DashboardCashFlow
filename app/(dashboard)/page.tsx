@@ -20,6 +20,7 @@ import { GroupBreakdownDialog } from "@/components/activos/group-breakdown-dialo
 import { ObligationFormDialog } from "@/components/obligations/obligation-form-dialog"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
 import { CutoffBanner } from "@/components/cutoff/cutoff-banner"
+import { OnboardingCard } from "@/components/onboarding-card"
 import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
 import { loadGastoGroups, loadIngresoGroups, type FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import type { FinancialRecord } from "@/lib/finance"
@@ -27,7 +28,7 @@ import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
 export default function DashboardPage() {
   const router = useRouter()
-  const { records, snapshots, createRecord, editRecord, deleteRecord, takeSnapshot, reload } =
+  const { records, snapshots, loading, createRecord, editRecord, deleteRecord, takeSnapshot, reload } =
     useFinance()
 
   const [snapshotDialogOpen, setSnapshotDialogOpen] = useState(false)
@@ -121,32 +122,20 @@ export default function DashboardPage() {
     }
   }
   const [snapshotName, setSnapshotName] = useState("")
-  const [snapshotDateFrom, setSnapshotDateFrom] = useState("")
-  const [snapshotDateTo, setSnapshotDateTo] = useState("")
+  const [snapshotPeriod, setSnapshotPeriod] = useState("")
 
   const openSnapshotDialog = () => {
     const today = new Date()
-    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0)
     setSnapshotName(`Snapshot ${snapshots.length + 1}`)
-    setSnapshotDateFrom(firstDay.toISOString().slice(0, 10))
-    setSnapshotDateTo(lastDay.toISOString().slice(0, 10))
+    setSnapshotPeriod(
+      today.toLocaleDateString("es-ES", { month: "long", year: "numeric" }),
+    )
     setSnapshotDialogOpen(true)
   }
 
-  const formatDate = (iso: string) =>
-    iso
-      ? new Date(iso + "T12:00:00").toLocaleDateString("es-ES", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        })
-      : ""
-
   const confirmSnapshot = () => {
     if (!snapshotName.trim()) return
-    const period = `${formatDate(snapshotDateFrom)} - ${formatDate(snapshotDateTo)}`
-    takeSnapshot(snapshotName, period)
+    takeSnapshot(snapshotName, snapshotPeriod.trim())
     setSnapshotDialogOpen(false)
   }
 
@@ -169,8 +158,11 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {!loading && records.length === 0 && <OnboardingCard />}
+
       <DashboardSheet
         records={records}
+        loading={loading}
         gastoGroups={gastoGroups}
         ingresoGroups={ingresoGroups}
         onCreate={createRecord}
@@ -212,7 +204,7 @@ export default function DashboardPage() {
           <DialogHeader>
             <DialogTitle>Tomar Snapshot</DialogTitle>
             <DialogDescription>
-              Guarda el estado actual del dashboard para consultarlo más tarde.
+              Guarda una foto de <strong>todos</strong> tus registros actuales, tal como están ahora mismo, para consultarla más tarde.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
@@ -225,25 +217,17 @@ export default function DashboardPage() {
                 placeholder="Ej: Cierre de mes"
               />
             </div>
-            <div className="flex gap-3">
-              <div className="flex flex-1 flex-col gap-2">
-                <Label htmlFor="snap-from">Fecha inicio</Label>
-                <Input
-                  id="snap-from"
-                  type="date"
-                  value={snapshotDateFrom}
-                  onChange={(e) => setSnapshotDateFrom(e.target.value)}
-                />
-              </div>
-              <div className="flex flex-1 flex-col gap-2">
-                <Label htmlFor="snap-to">Fecha fin</Label>
-                <Input
-                  id="snap-to"
-                  type="date"
-                  value={snapshotDateTo}
-                  onChange={(e) => setSnapshotDateTo(e.target.value)}
-                />
-              </div>
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="snap-period">Período (solo una etiqueta, no filtra nada)</Label>
+              <Input
+                id="snap-period"
+                value={snapshotPeriod}
+                onChange={(e) => setSnapshotPeriod(e.target.value)}
+                placeholder="Ej: Agosto 2026"
+              />
+              <p className="text-xs text-gray-400">
+                Es solo el nombre con el que vas a identificar este snapshot en la lista — el snapshot siempre incluye todos los registros que ves ahora en el dashboard, sin importar qué escribas acá.
+              </p>
             </div>
           </div>
           <DialogFooter>

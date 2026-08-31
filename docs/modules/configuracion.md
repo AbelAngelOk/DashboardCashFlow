@@ -1,6 +1,6 @@
 ---
-Versión: 2.0.0
-Última actualización: 2026-06-30
+Versión: 2.1.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -10,6 +10,8 @@ Estado: Activo
 ## Objetivo
 
 Centralizar las preferencias del usuario: conversión de monedas, tipos de activo personalizados u ocultos, y gestión de marcadores visuales.
+
+**v2.6.0** (ver `docs/CHANGELOG.md`): la sección de tasas de cambio ahora avisa cuando están desactualizadas (`ratesLastUpdated` pasó a ISO, antes era un string ya formateado sin poder calcular antigüedad). Nueva sección "Exportar Datos" — CSV de records actuales y de historial de movimientos, 100% client-side.
 
 **Ruta**: `/configuracion`
 **Página**: `app/(dashboard)/configuracion/page.tsx`

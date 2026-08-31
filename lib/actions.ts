@@ -1,10 +1,12 @@
 "use server"
 
 import { getServerSession } from "next-auth"
+import { headers } from "next/headers"
 import { hash } from "bcryptjs"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import { getAccountBalances } from "./journal-actions"
+import { checkRateLimit, clientIpFrom } from "./rate-limit"
 import type {
   Currency,
   FinancialRecord,
@@ -33,6 +35,12 @@ export async function registerUser({
   email: string
   password: string
 }) {
+  const ip = clientIpFrom(await headers())
+  const { allowed } = checkRateLimit(`register:${ip}`, { max: 5, windowMs: 60 * 60 * 1000 })
+  if (!allowed) {
+    throw new Error("Demasiados registros desde esta conexión. Esperá un rato y volvé a intentar.")
+  }
+
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) throw new Error("Ya existe una cuenta con ese email")
   const passwordHash = await hash(password, 12)
@@ -51,15 +59,21 @@ export async function registerUser({
 }
 
 // ── Load ─────────────────────────────────────────────────────────────────────
+//
+// Separado a propósito en dos funciones independientes (antes era un solo
+// `loadData()` con Promise.all de las tres). El dashboard y la mayoría de las
+// pantallas solo necesitan `records`/`snapshots` — el audit log completo
+// (`movements`, sin límite, solo lo usa /movimientos y el badge del sidebar)
+// no tiene por qué bloquear ese render. Ver `components/finance-store.tsx`,
+// que dispara ambas cargas en paralelo, sin esperar una a la otra.
 
-export async function loadData(): Promise<{
+export async function loadFinanceCore(): Promise<{
   records: FinancialRecord[]
   snapshots: Snapshot[]
-  movements: Movement[]
 }> {
   const userId = await getUserId()
 
-  const [dbRecords, dbSnapshots, dbMovements] = await Promise.all([
+  const [dbRecords, dbSnapshots] = await Promise.all([
     prisma.record.findMany({
       where: {
         userId,
@@ -78,10 +92,6 @@ export async function loadData(): Promise<{
       where: { userId },
       include: { snapshotRecords: true },
       orderBy: { createdAt: "desc" },
-    }),
-    prisma.auditLog.findMany({
-      where: { userId },
-      orderBy: { date: "desc" },
     }),
   ])
 
@@ -112,16 +122,26 @@ export async function loadData(): Promise<{
         ...(sr.linkedTo ? { linkedTo: sr.linkedTo } : {}),
       })),
     })),
-    movements: dbMovements.map((m) => ({
-      id: m.id,
-      date: m.date,
-      action: m.action as MovementAction,
-      recordType: m.recordType as RecordType,
-      recordName: m.recordName,
-      detail: m.detail,
-      comment: m.comment,
-    })),
   }
+}
+
+export async function loadMovements(): Promise<Movement[]> {
+  const userId = await getUserId()
+
+  const dbMovements = await prisma.auditLog.findMany({
+    where: { userId },
+    orderBy: { date: "desc" },
+  })
+
+  return dbMovements.map((m) => ({
+    id: m.id,
+    date: m.date,
+    action: m.action as MovementAction,
+    recordType: m.recordType as RecordType,
+    recordName: m.recordName,
+    detail: m.detail,
+    comment: m.comment,
+  }))
 }
 
 // ── CRUD ─────────────────────────────────────────────────────────────────────

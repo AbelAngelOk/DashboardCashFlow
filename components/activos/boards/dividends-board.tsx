@@ -115,6 +115,12 @@ function AddDividendDialog({ asset, board, onClose }: AddDividendDialogProps) {
               />
             </div>
           </div>
+          {percentage && Number(percentage) > 0 && (
+            <p className="-mt-2 text-[11px] text-gray-500">
+              El % se usa como sugerencia al cobrar (calculado sobre el valor del activo en ese
+              momento) — no reemplaza la ganancia estimada de acá, que es solo para vista previa.
+            </p>
+          )}
 
           {/* Recurring */}
           <div className="flex flex-col gap-2 rounded border border-gray-200 p-3">
@@ -180,7 +186,13 @@ function CollectDividendDialog({ asset, board, dividendId, onClose }: CollectDia
   const router = useRouter()
   const { reload } = useFinance()
   const [isPending, startTransition] = useTransition()
-  const [actualGain, setActualGain] = useState("")
+
+  const entry = (board.dividends ?? []).find((d) => d.id === dividendId)
+  // El % se calcula sobre el valor del activo AHORA, al cobrar — no cuando se
+  // creó la entrada. Es solo una sugerencia inicial: el campo queda editable
+  // por si el % no capta algo puntual del período.
+  const suggested = entry?.percentage ? (entry.percentage / 100) * asset.amount : null
+  const [actualGain, setActualGain] = useState(suggested !== null ? suggested.toFixed(2) : "")
 
   const handleCollect = () => {
     if (!actualGain) return
@@ -209,6 +221,13 @@ function CollectDividendDialog({ asset, board, dividendId, onClose }: CollectDia
             className="mt-1 border-2 border-black"
             autoFocus
           />
+          {suggested !== null && (
+            <p className="mt-1 text-xs text-gray-500">
+              Sugerido: {entry?.percentage}% de {formatAmount(asset.amount, asset.currency)}{" "}
+              {asset.currency} (valor actual del activo) = {formatAmount(suggested, asset.currency)}{" "}
+              {asset.currency}. Ajustalo si hace falta.
+            </p>
+          )}
           <p className="mt-2 text-xs text-gray-500">
             Se creará un ingreso &quot;Ganancia dividendos {asset.name}&quot; en el dashboard.
           </p>

@@ -1,6 +1,6 @@
 ---
-Versión: 2.0.0
-Última actualización: 2026-06-30
+Versión: 2.2.0
+Última actualización: 2026-08-26
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -10,6 +10,10 @@ Estado: Activo
 ## Objetivo
 
 Gestionar el portafolio de inversiones del usuario: crear, editar, agrupar y eliminar activos financieros de distintos tipos, ver el historial de movimientos por activo, y acceder a paneles especializados según el tipo de instrumento.
+
+**v2.6.0** (ver `docs/CHANGELOG.md`): la columna "Tipo" en `/activos` resolvía el nombre de categoría contra el mapa legado `ASSET_TYPE_LABELS` en vez de `categoryName()` — categorías creadas por el usuario se mostraban como UUID crudo. Corregido.
+
+**v2.7.0**: alta con posiciones LONG/SHORT en `AssetFormDialog`, advertencia de nombre duplicado, apalancamiento + liquidación individual por posición en `FuturesPanel`, y sugerencia de monto por porcentaje al cobrar un dividendo. Detalle en las secciones correspondientes más abajo.
 
 **Ruta**: `/activos` (lista), `/activos/[id]` (detalle)
 **Página lista**: `app/(dashboard)/activos/page.tsx` (Client Component)
@@ -93,6 +97,12 @@ Además: tipos personalizados definidos por el usuario en `/configuracion`.
 - `asset-detail.tsx` enruta al panel correcto según `asset.assetType`
 - Paneles: StockPanel, BondPanel, FixedTermPanel, CryptoPanel, FuturesPanel, OptionsPanel, TradingPanel, TradingBotPanel, RebalanceBotPanel
 
+### Panel de Futuros (`FuturesPanel`) — v2.7.0
+- Cada posición (`FinancialMovement`, `metadata: FuturesMovementMetadata`) puede llevar `leverage` (apalancamiento, default 1x), fijado al abrir la posición en `AddPositionDialog`.
+- **Liquidación individual**: botón "Cerrar" por fila abre `ClosePositionDialog`, pide precio de salida y calcula `P&L = (precioSalida − precioEntrada) × qty × leverage` (invertido para SHORT). Confirmar escribe `metadata.closed/closePrice/closeDate/pnl` vía `updateMovement()` — no borra ni reemplaza el movimiento original.
+- El promedio de entrada (`avgEntry()`) y los contadores "Posiciones abiertas" filtran las posiciones con `metadata.closed !== true`; una posición cerrada sigue en el historial con su P&L visible y ya no cuenta para el promedio.
+- Liquidar todas las posiciones juntas (botón "Liquidar" del panel) sigue existiendo aparte y es independiente de cerrar posiciones una por una.
+
 ### Sección: Movimientos (`AssetMovementsSection`)
 - Historial de BUY/SELL/DEPOSIT/EXTRACT/ADJUSTMENT
 - Edición inline del tipo y descripción (click lápiz → guardar con Enter o ✓)
@@ -100,6 +110,7 @@ Además: tipos personalizados definidos por el usuario en `/configuracion`.
 ### Sección: Tableros (`BoardManager`) — solo tipos no-GROUP
 - "Agregar tablero" → Dividendos o Tablero personalizado
 - **DividendsBoard**: seguimiento de dividendos con recurrencia (mensual/trimestral/semestral/anual), ventana de 12 meses. Cobrar dividendo → crea ingreso en dashboard
+  - **v2.7.0**: cada entrada guarda un `percentage` opcional. `CollectDividendDialog` precalcula `(percentage / 100) × asset.amount` (valor actual del activo, no el de cuando se creó la entrada) y precarga "Ganancia obtenida" con ese valor — el usuario lo puede editar antes de confirmar. Antes `percentage` se guardaba pero nunca se usaba en ningún cálculo.
 - **CustomBoard**: tabla configurable, título editable, columnas y filas
 
 ### Para tipo GROUP
@@ -116,6 +127,9 @@ Sin BoardManager.
 - Para tipos con qty/precio (STOCK, CRYPTO, FUTURES, OPTIONS): cambiar qty o precio auto-calcula monto
 - Si qty × precio ≠ monto (todos ingresados manualmente): warning + bloqueo de guardado
 - Todos los campos numéricos usan `NumericInput` (soporte de expresiones `=expr`)
+- **v2.7.0 — nombre duplicado**: si el nombre ingresado coincide (case-insensitive) con un activo `activo` ya existente en `records`, se muestra una advertencia ámbar bajo el campo Nombre y se bloquea "Crear activo". Comparación en memoria contra `FinanceProvider.records`, no una query aparte.
+- **v2.7.0 — alta por operaciones LONG/SHORT**: checkbox "Cargar por operaciones" reemplaza los campos manuales de cantidad/precio promedio por una lista repetible de posiciones (tipo, cantidad, precio, fecha, nota). `netFromPositions()` calcula cantidad neta y precio promedio ponderado (solo LONG entra en el promedio; SHORT resta cantidad neta). Al guardar, `createAsset()` recibe `skipInitialMovement: true` (evita el movimiento "Inversión inicial" duplicado) y se crea un `FinancialMovement` por posición con `metadata: FuturesMovementMetadata` — mismo formato que usa `FuturesPanel`, así que cualquier activo con capability `quantity` cargado así puede liquidarse posición por posición desde el panel de futuros. Coexiste con el modo simple; no lo reemplaza.
+  - **Cuidado con `NumericInput` en este flujo**: su `onChange` solo dispara en blur, no por tecla. El cálculo en vivo (`netFromPositions` vía `useEffect`) es solo para la vista previa — `handleSave` recalcula directo desde el array `positions` en el momento de guardar, para no depender de que el último campo tocado haya perdido el foco antes del click en "Crear activo".
 
 ---
 

@@ -22,7 +22,8 @@ import {
   dbEditRecord,
   dbTakeSnapshot,
   dbUpdateComment,
-  loadData,
+  loadFinanceCore,
+  loadMovements,
 } from "@/lib/actions"
 import { toast } from "@/components/ui/use-toast"
 
@@ -61,7 +62,10 @@ interface FinanceContextValue {
   records: FinancialRecord[]
   snapshots: Snapshot[]
   movements: Movement[]
+  /** records + snapshots — lo que necesita el dashboard y la mayoría de pantallas */
   loading: boolean
+  /** audit log completo — no bloquea `loading`, ver nota en lib/actions.ts */
+  movementsLoading: boolean
   createRecord: (record: FinancialRecord) => void
   editRecord: (record: FinancialRecord, previous: FinancialRecord) => void
   deleteRecord: (record: FinancialRecord) => void
@@ -78,16 +82,26 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [movements, setMovements] = useState<Movement[]>([])
   const [loading, setLoading] = useState(true)
+  const [movementsLoading, setMovementsLoading] = useState(true)
 
+  // Dos fetches independientes, disparados en paralelo: ninguno espera al
+  // otro. El audit log (movements) puede ser grande y no lo necesita el
+  // dashboard, así que su tiempo de carga ya no retrasa records/snapshots.
   useEffect(() => {
-    loadData()
+    loadFinanceCore()
       .then((data) => {
         setRecords(data.records)
         setSnapshots(data.snapshots)
-        setMovements(data.movements)
       })
       .catch(console.error)
       .finally(() => setLoading(false))
+  }, [])
+
+  useEffect(() => {
+    loadMovements()
+      .then(setMovements)
+      .catch(console.error)
+      .finally(() => setMovementsLoading(false))
   }, [])
 
   const logMovement = (
@@ -184,13 +198,13 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
   const getSnapshot = (id: string) => snapshots.find((s) => s.id === id)
 
   const reload = useCallback(() => {
-    loadData()
+    loadFinanceCore()
       .then((data) => {
         setRecords(data.records)
         setSnapshots(data.snapshots)
-        setMovements(data.movements)
       })
       .catch(console.error)
+    loadMovements().then(setMovements).catch(console.error)
   }, [])
 
   return (
@@ -200,6 +214,7 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
         snapshots,
         movements,
         loading,
+        movementsLoading,
         createRecord,
         editRecord,
         deleteRecord,

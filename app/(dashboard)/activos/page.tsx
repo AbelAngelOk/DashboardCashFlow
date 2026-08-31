@@ -20,7 +20,7 @@ import type { FinancialRecord } from "@/lib/finance"
 
 export default function ActivosPage() {
   const router = useRouter()
-  const { records, deleteRecord, reload } = useFinance()
+  const { records, loading, deleteRecord, reload } = useFinance()
   const [isPending, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
   const [hideZero, setHideZero] = useState(true)
@@ -265,6 +265,7 @@ export default function ActivosPage() {
       <AssetList
         topLevel={topLevel}
         all={allActivos}
+        loading={loading}
         onLiquidate={handleLiquidate}
         onPhysicalDelete={handlePhysicalDelete}
         onRemoveFromGroup={handleRemoveFromGroup}

@@ -11,6 +11,7 @@ import {
   type DividendEntry,
 } from "./assets"
 import { refreshIncomeWindows } from "./income-actions"
+import { formatOccurrenceName } from "./income-streams"
 import type { Currency } from "./finance"
 import {
   currentOpenPeriod,
@@ -19,6 +20,7 @@ import {
   normalizeCutoffDay,
   pendingCutoffPeriod,
   periodLabel,
+  periodsBetween,
   periodRange,
   periodRangeLabel,
   type CutoffOptions,
@@ -98,6 +100,13 @@ export async function getCutoffStatus(): Promise<CutoffStatus> {
     }),
   ])
 
+  // Si el último corte fue, por ejemplo, "2026-06" y el pendiente ahora es
+  // "2026-08", periodsBetween da 2: hay un mes en el medio ("2026-07") que
+  // nunca se cortó por separado — se va a mezclar con el que se corte ahora.
+  const periodsOverdue = lastCutoff
+    ? Math.max(0, periodsBetween(lastCutoff.period, pendingPeriod) - 1)
+    : 0
+
   return {
     cutoffDay,
     pendingPeriod,
@@ -109,6 +118,7 @@ export async function getCutoffStatus(): Promise<CutoffStatus> {
     lastCutoffPeriod: lastCutoff?.period,
     lastCutoffAt: lastCutoff?.executedAt.toISOString(),
     nextCutoffAt: nextCutoffDate(incomingPeriod, cutoffDay).toISOString(),
+    periodsOverdue,
   }
 }
 
@@ -236,7 +246,7 @@ async function collectIncomeDues(userId: string, incomingPeriod: PeriodKey, cuto
       expectedDate: { gte: start, lt: end },
       rule: { status: "ACTIVE" },
     },
-    include: { rule: { select: { name: true } } },
+    include: { rule: { select: { name: true, installmentCount: true } } },
   })
 }
 
@@ -710,9 +720,10 @@ async function activateIncomeOccurrences(
 
   for (const occ of dues) {
     if (!occ.ingresoRecordId) continue
+    const name = formatOccurrenceName(occ.rule.name, occ.installmentNumber, occ.rule.installmentCount)
     const updated = await prisma.record.updateMany({
       where: { id: occ.ingresoRecordId, userId, status: "PENDING" },
-      data: { name: occ.rule.name, status: "ACTIVE" },
+      data: { name, status: "ACTIVE" },
     })
     if (updated.count > 0) generated++
   }

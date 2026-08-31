@@ -77,12 +77,26 @@ export function CutoffBanner({ onDone }: CutoffBannerProps) {
         data-testid="cutoff-button"
         size="sm"
         variant="outline"
-        className="gap-2 border-2 border-black font-bold hover:bg-gray-100"
+        className={`gap-2 border-2 font-bold hover:bg-gray-100 ${
+          status.periodsOverdue > 0 ? "border-amber-600 text-amber-700" : "border-black"
+        }`}
         onClick={() => setDialogOpen(true)}
-        title={`Cerrar ${status.pendingPeriodLabel} y preparar ${status.incomingPeriodLabel}`}
+        title={
+          status.periodsOverdue > 0
+            ? `Hay ${status.periodsOverdue} período(s) sin cortar antes de ${status.pendingPeriodLabel} — se van a mezclar con este corte`
+            : `Cerrar ${status.pendingPeriodLabel} y preparar ${status.incomingPeriodLabel}`
+        }
       >
         <Scissors className="h-4 w-4" />
         Realizar corte de mes
+        {status.periodsOverdue > 0 && (
+          <span
+            data-testid="cutoff-overdue-badge"
+            className="ml-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-amber-500 text-[10px] font-bold text-white"
+          >
+            {status.periodsOverdue}
+          </span>
+        )}
       </Button>
 
       <CutoffDialog
