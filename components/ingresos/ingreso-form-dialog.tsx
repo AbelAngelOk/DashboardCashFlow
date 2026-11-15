@@ -19,8 +19,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { currencies, type Currency } from "@/lib/finance"
+import { currencies, NAME_MAX_LENGTH, type Currency } from "@/lib/finance"
+import { Textarea } from "@/components/ui/textarea"
 import { createFreeIngreso, createIngresoFromAsset } from "@/lib/ingreso-actions"
+import { setRecordDescription } from "@/lib/actions"
 import { useFinance } from "@/components/finance-store"
 import type { FinancialRecord } from "@/lib/finance"
 
@@ -41,6 +43,7 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
 
   const [sourceType, setSourceType] = useState<SourceType>("free")
   const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
   const [amount, setAmount] = useState("")
   const [currency, setCurrency] = useState<Currency>("ARS")
   const [saving, setSaving] = useState(false)
@@ -49,6 +52,7 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
   const reset = () => {
     setSourceType("free")
     setName("")
+    setDescription("")
     setAmount("")
     setCurrency("ARS")
     setSelectedAssetId("")
@@ -64,7 +68,7 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
     return ""
   }
 
-  const effectiveName = name.trim() || suggestedName()
+  const effectiveName = name.trim() || suggestedName().slice(0, NAME_MAX_LENGTH)
 
   const canSave = (): boolean => {
     if (sourceType === "auto") return false
@@ -83,15 +87,17 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
       const amountNum = Number(amount)
       const ingresoName = effectiveName
 
+      let ingresoId: string | undefined
       if (sourceType === "free") {
-        await createFreeIngreso({ name: ingresoName, amount: amountNum, currency })
+        ingresoId = await createFreeIngreso({ name: ingresoName, amount: amountNum, currency })
       } else if (sourceType === "existing-asset") {
-        await createIngresoFromAsset(
+        ingresoId = await createIngresoFromAsset(
           { name: ingresoName, amount: amountNum, currency },
           selectedAssetId,
           amountNum,
         )
       }
+      if (ingresoId && description.trim()) await setRecordDescription(ingresoId, description)
 
       await reload()
       onCreated?.()
@@ -200,6 +206,7 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
               </Label>
               <Input
                 value={name}
+                maxLength={NAME_MAX_LENGTH}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={suggestedName() || "Ej: Salario julio"}
                 className="border-2 border-black"
@@ -207,6 +214,21 @@ export function IngresoFormDialog({ open, onOpenChange, onCreated }: Props) {
               {sourceType === "existing-asset" && !name.trim() && suggestedName() && (
                 <p className="text-xs text-gray-400">Se usará: "{suggestedName()}"</p>
               )}
+            </div>
+          )}
+
+          {sourceType !== "auto" && (
+            <div className="flex flex-col gap-1">
+              <Label className="text-xs font-bold uppercase">
+                Descripción <span className="font-normal text-gray-400">(opcional)</span>
+              </Label>
+              <Textarea
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Detalle que se ve al pasar el mouse por el ícono de info en el dashboard"
+                rows={2}
+                className="border-2 border-black"
+              />
             </div>
           )}
 

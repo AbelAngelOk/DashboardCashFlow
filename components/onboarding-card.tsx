@@ -23,7 +23,7 @@ function writeDismissed() {
  * Explicación de una pantalla del modelo activo/pasivo/flujo de caja, para
  * quien nunca usó el formato CASHFLOW de Kiyosaki en el que se basa este
  * dashboard. Se muestra solo mientras el dashboard está genuinamente vacío
- * (ver PRODUCT_REVIEW.md §4 — "sin onboarding" era el hueco).
+ * (ver docs/archive/PRODUCT_REVIEW.md §4 — "sin onboarding" era el hueco).
  */
 export function OnboardingCard() {
   const [dismissed, setDismissed] = useState(readDismissed)

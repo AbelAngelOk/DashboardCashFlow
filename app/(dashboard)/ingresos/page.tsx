@@ -27,7 +27,8 @@ import { IngresoFormDialog } from "@/components/ingresos/ingreso-form-dialog"
 import { EditOrVersionDialog } from "@/components/shared/edit-or-version-dialog"
 import { IngresoGastoLinksPanel } from "@/components/ingresos/ingreso-gasto-links-panel"
 import { MarkerPicker } from "@/components/markers/marker-picker"
-import { formatAmount, type Currency } from "@/lib/finance"
+import { FlowProjectionPanel } from "@/components/charts/flow-charts"
+import { formatAmount, LIVE_FLOW_STATUSES, type Currency, type RecordStatus } from "@/lib/finance"
 import type { MarkerDefinition } from "@/lib/marker-types"
 import {
   Select,
@@ -149,7 +150,7 @@ export default function IngresosPage() {
   const fetchIngresos = useCallback(async (status: StatusFilter) => {
     setLoading(true)
     try {
-      const [data] = await Promise.all([loadIngresos([status]), fetchGroups()])
+      const [data] = await Promise.all([loadIngresos(status === "ACTIVE" ? ["ACTIVE", "REVIEW", "CONFIRMED"] : [status]), fetchGroups()])
       setIngresos(data)
       refreshMarkers(data.map((i) => i.id))
     } catch (err) {
@@ -270,6 +271,8 @@ export default function IngresosPage() {
           )}
         </div>
       </div>
+
+      <FlowProjectionPanel kind="income" />
 
       {/* Status filter */}
       <div className="mb-4 flex gap-1">
@@ -439,7 +442,7 @@ export default function IngresosPage() {
                 {rows.map((i) => {
                   const marker = markerMap[i.id] ?? null
                   return (
-                  <div key={i.id} className={i.status !== "ACTIVE" ? "opacity-60" : ""}>
+                  <div key={i.id} className={!LIVE_FLOW_STATUSES.includes(i.status as RecordStatus) ? "opacity-60" : ""}>
                     <div
                       className="flex border-b border-black text-sm"
                       style={marker ? {
@@ -482,7 +485,7 @@ export default function IngresosPage() {
                           currentMarker={marker}
                           onChanged={() => refreshMarkers(ingresos.map((x) => x.id))}
                         />
-                        {i.status === "ACTIVE" ? (
+                        {LIVE_FLOW_STATUSES.includes(i.status as RecordStatus) ? (
                           <>
                             <button
                               onClick={() => setEditingIngreso(i)}

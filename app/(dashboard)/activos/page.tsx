@@ -15,12 +15,13 @@ import {
 import { useFinance } from "@/components/finance-store"
 import { AssetList } from "@/components/activos/asset-list"
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
+import { AssetChartsSection } from "@/components/charts/asset-charts"
 import { createGroup, removeFromGroup, deleteGroup, assignToGroup, liquidarActivo, physicalDeleteAsset } from "@/lib/assets-actions"
 import type { FinancialRecord } from "@/lib/finance"
 
 export default function ActivosPage() {
   const router = useRouter()
-  const { records, loading, deleteRecord, reload } = useFinance()
+  const { records, loading, reload } = useFinance()
   const [isPending, startTransition] = useTransition()
   const [open, setOpen] = useState(false)
   const [hideZero, setHideZero] = useState(true)
@@ -274,6 +275,8 @@ export default function ActivosPage() {
         selectedIds={selectedIds}
         onToggleSelect={toggleSelect}
       />
+
+      {!loading && allActivos.length > 0 && <AssetChartsSection />}
 
       <AssetFormDialog open={open} onOpenChange={setOpen} />
     </div>

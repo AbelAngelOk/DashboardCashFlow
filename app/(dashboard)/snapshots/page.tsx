@@ -5,20 +5,22 @@ import { Camera, ArrowRight } from "lucide-react"
 import { useFinance } from "@/components/finance-store"
 import { useSettings } from "@/components/settings-store"
 import { calculateTotalsConverted, formatAmount } from "@/lib/finance"
+import { snapshotAssetsTotal } from "@/lib/charts"
+import { groupParentNamesOf } from "@/components/charts/asset-charts"
 import { TrendChart } from "@/components/ui/trend-chart"
 
 export default function SnapshotsPage() {
-  const { snapshots, loading } = useFinance()
+  const { records, snapshots, loading } = useFinance()
   const { settings } = useSettings()
   const { baseCurrency, exchangeRates } = settings
+  const parentNames = groupParentNamesOf(records)
 
   // Orden cronológico (la lista viene más-reciente-primero desde la DB).
   const chronological = [...snapshots].reverse()
   const netWorthPoints = chronological.map((s) => {
-    const activos = s.records.filter((r) => r.type === "activo" && r.amount !== 0)
     const pasivos = s.records.filter((r) => r.type === "pasivo")
     const netWorth =
-      calculateTotalsConverted(activos, baseCurrency, exchangeRates) -
+      snapshotAssetsTotal(s, parentNames, baseCurrency, exchangeRates) -
       calculateTotalsConverted(pasivos, baseCurrency, exchangeRates)
     return { label: s.name, value: netWorth }
   })

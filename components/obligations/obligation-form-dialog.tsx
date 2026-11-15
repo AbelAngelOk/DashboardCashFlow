@@ -21,20 +21,20 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { currencies } from "@/lib/finance"
+import { currencies, NAME_MAX_LENGTH } from "@/lib/finance"
 import type { Currency } from "@/lib/finance"
 import {
   type ObligationType,
-  type RecurrenceType,
+  type ObligationRecurrence,
   OBLIGATION_TYPE_LABELS,
-  RECURRENCE_TYPE_LABELS,
+  OBLIGATION_RECURRENCE_LABELS,
 } from "@/lib/obligations"
 import { createObligation, addObligationRule } from "@/lib/obligation-actions"
 
 interface RuleDraft {
   id: string
   name: string
-  recurrenceType: RecurrenceType
+  recurrenceType: ObligationRecurrence
   startDate: string
   expectedAmount: string
   currency: Currency
@@ -228,6 +228,7 @@ export function ObligationFormDialog({ open, onOpenChange, onCreated }: Props) {
                 <Input
                   autoFocus
                   value={name}
+                  maxLength={NAME_MAX_LENGTH}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ej: Alquiler departamento"
                   className="border-2 border-black rounded-none focus-visible:ring-0"
@@ -347,7 +348,7 @@ export function ObligationFormDialog({ open, onOpenChange, onCreated }: Props) {
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            {(Object.entries(RECURRENCE_TYPE_LABELS) as [RecurrenceType, string][]).map(([k, v]) => (
+                            {(Object.entries(OBLIGATION_RECURRENCE_LABELS) as [ObligationRecurrence, string][]).map(([k, v]) => (
                               <SelectItem key={k} value={k}>{v}</SelectItem>
                             ))}
                           </SelectContent>

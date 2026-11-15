@@ -1,6 +1,6 @@
 # Estado Técnico
 
-Resumen consolidado del estado actual de issues, código muerto, e inconsistencias identificadas. Los archivos originales detallados están en `docs/analisis/`.
+Resumen consolidado del estado actual de issues, código muerto, e inconsistencias identificadas. Los archivos originales detallados están en `docs/archive/analisis/`.
 
 Última actualización: 2026-06-23
 
@@ -69,4 +69,4 @@ Resumen consolidado del estado actual de issues, código muerto, e inconsistenci
 4. **R-03** — Eliminar activo: comportamiento inconsistente Dashboard vs `/activos`
 5. **R-06** — `RebalanceBotPanel` closure obsoleto puede calcular `totalInvested` incorrecto
 
-Para detalles completos, ver `docs/analisis/Inconsistencias.md`, `docs/analisis/Refactorizaciones-Recomendadas.md`, y `docs/analisis/Codigo-Muerto.md`.
+Para detalles completos, ver `docs/archive/analisis/` (Inconsistencias, Refactorizaciones-Recomendadas, Codigo-Muerto).

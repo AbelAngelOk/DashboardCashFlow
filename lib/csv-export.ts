@@ -1,6 +1,6 @@
 // Exportación de datos a CSV, 100% client-side — los datos ya están en el
 // navegador (via FinanceProvider), no hace falta ningún endpoint nuevo.
-// Ver PRODUCT_REVIEW.md §4: "no poder sacar tus propios datos financieros es
+// Ver docs/archive/PRODUCT_REVIEW.md §4: "no poder sacar tus propios datos financieros es
 // una limitación de confianza, no solo de conveniencia."
 
 function escapeCsvCell(value: unknown): string {

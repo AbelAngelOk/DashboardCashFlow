@@ -1,5 +1,5 @@
 // Rate limiting mínimo, en memoria — no Redis, no infra nueva. Ver
-// PRODUCT_REVIEW.md §3/§4: hoy no hay ninguna protección contra fuerza bruta
+// docs/archive/PRODUCT_REVIEW.md §3/§4: hoy no hay ninguna protección contra fuerza bruta
 // en login/registro.
 //
 // Limitación honesta: esto vive en la memoria del proceso de Node. En

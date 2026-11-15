@@ -32,6 +32,8 @@ Gestionar el registro de ingresos financieros del usuario: ver el listado comple
 
 ## Features
 
+> **v2.8.0**: arriba de la lista hay un gráfico **Ingresos proyectados** (próximos 12 meses, cobros de reglas de ingreso y dividendos) que marca el mes pico. El filtro "Activos" incluye los registros "Por revisar" (`REVIEW`). La descripción opcional se carga en el formulario y se ve como ícono de info en el dashboard. Ver `docs/modules/graficos.md`.
+
 ### 1. Lista de ingresos con fuente
 - Ingresos agrupados por fuente: Desde Activo / Ingresos libres
 - Cada ingreso muestra: nombre, monto, moneda, fecha, estado (badge), fuente

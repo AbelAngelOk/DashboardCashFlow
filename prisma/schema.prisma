@@ -30,6 +30,9 @@ model Record {
   assetType         String?   @map("asset_type")
   // Capacidad: el activo se opera en unidades (cantidad + precio promedio)
   tracksQuantity    Boolean   @default(false) @map("tracks_quantity")
+  // El activo es un negocio/renta que produce ingreso (no acumulación de capital).
+  // Solo los ingresos de activos marcados cuentan en la Libertad Financiera.
+  generatesIncome   Boolean   @default(false) @map("generates_income")
   ticker            String?
   currentQty        Decimal?  @map("current_quantity")    @db.Decimal(18, 8)
   avgBuyPrice       Decimal?  @map("avg_buy_price")       @db.Decimal(18, 4)
@@ -148,7 +151,7 @@ model User {
   @@map("users")
 }
 
-// Recuperación de contraseña. Ver PRODUCT_REVIEW.md §3.4 — antes no existía
+// Recuperación de contraseña. Ver docs/archive/PRODUCT_REVIEW.md §3.4 — antes no existía
 // ningún camino de vuelta si te olvidabas la contraseña.
 model PasswordResetToken {
   id        String    @id @default(uuid())
@@ -318,8 +321,11 @@ model Obligation {
   nextDueDate    DateTime? @map("next_due_date")
   createdAt      DateTime  @default(now()) @map("created_at")
   metadata       Json?
+  // Grupo visual (Group con groupType "LIABILITY"); no afecta montos ni cuotas
+  groupId        String?   @map("group_id")
 
   user         User                    @relation(fields: [userId], references: [id])
+  group        Group?                  @relation(fields: [groupId], references: [id], onDelete: SetNull)
   rules        ObligationRule[]
   installments ObligationInstallment[]
   payments     ObligationPayment[]
@@ -327,6 +333,7 @@ model Obligation {
   @@map("obligations")
   @@index([userId, status])
   @@index([userId, nextDueDate])
+  @@index([groupId])
 }
 
 model ObligationRule {
@@ -415,8 +422,9 @@ model Group {
   groupType String   @map("group_type") // ASSET | INCOME | EXPENSE | LIABILITY
   createdAt DateTime @default(now()) @map("created_at")
 
-  user    User          @relation(fields: [userId], references: [id])
-  records RecordGroup[]
+  user        User          @relation(fields: [userId], references: [id])
+  records     RecordGroup[]
+  obligations Obligation[]
 
   @@map("groups")
 }

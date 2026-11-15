@@ -33,6 +33,8 @@ Gestionar el registro de gastos financieros del usuario: ver el listado completo
 
 ## Features
 
+> **v2.8.0**: arriba de la lista hay un gráfico **Gastos proyectados** (próximos 12 meses, cuotas y pagos de obligaciones) que marca el mes pico. El filtro "Activos" incluye los registros "Por revisar" (`REVIEW`). La descripción opcional se carga en el formulario y se ve como ícono de info en el dashboard. Ver `docs/modules/graficos.md`.
+
 ### 1. Lista de gastos con fuente
 - Gastos agrupados por fuente: Desde Obligación / Desde Activo / Gastos libres
 - Cada gasto muestra: nombre, monto, moneda, fecha, estado (badge), fuente

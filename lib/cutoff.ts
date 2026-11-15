@@ -94,6 +94,15 @@ export function periodRangeLabel(key: PeriodKey, cutoffDay: number): string {
   return `${fmt(start)} - ${fmt(lastDay)}`
 }
 
+/** Rango compacto para mostrar junto al nombre del período: "15 ago – 14 sep". */
+export function periodRangeShort(key: PeriodKey, cutoffDay: number): string {
+  const { start, end } = periodRange(key, cutoffDay)
+  const lastDay = new Date(end.getTime() - 24 * 60 * 60 * 1000)
+  const fmt = (d: Date) =>
+    d.toLocaleDateString("es-AR", { day: "numeric", month: "short" }).replace(".", "")
+  return `${fmt(start)} – ${fmt(lastDay)}`
+}
+
 // ── Tipos compartidos cliente/servidor ────────────────────────────────────────
 
 export interface CutoffStatus {
@@ -115,7 +124,7 @@ export interface CutoffStatus {
   nextCutoffAt: string
   /**
    * Cuántos períodos completos quedaron sin cortar entre el último corte y el
-   * pendiente actual (0 = ninguno salteado). Ver CORTE_Y_SNAPSHOTS.md §7: el
+   * pendiente actual (0 = ninguno salteado). Ver docs/archive/CORTE_Y_SNAPSHOTS.md §7: el
    * corte no filtra por fecha, así que si salteás uno, el próximo corte
    * mezcla varios meses sin forma de separarlos después.
    */
@@ -127,12 +136,16 @@ export interface CutoffPreview {
   periodLabel: string
   incomingPeriod: PeriodKey
   incomingPeriodLabel: string
-  /** Ingresos ACTIVE que pasarían a histórico */
+  /** Ingresos confirmados (ACTIVE) que pasarían a histórico */
   ingresosToArchive: number
-  /** Gastos ACTIVE que pasarían a histórico */
+  /** Gastos confirmados (ACTIVE) que pasarían a histórico */
   gastosToArchive: number
   /** De los anteriores, cuántos tienen etiqueta */
   markedToArchive: number
+  /** Ingresos/gastos todavía por revisar (REVIEW) */
+  unconfirmed: number
+  /** De los anteriores, cuántos tienen etiqueta */
+  unconfirmedMarked: number
   /** Gastos de obligaciones que se activarían */
   gastosToGenerate: number
   /** Ingresos de dividendos que se crearían */
@@ -144,6 +157,8 @@ export interface CutoffPreview {
 export interface CutoffOptions {
   takeSnapshot: boolean
   keepMarked: boolean
+  /** Lo que sigue por revisar (cuota impaga, cobro sin verificar) pasa al período nuevo */
+  keepUnconfirmed: boolean
   clearEntityMarkers: boolean
 }
 
@@ -153,6 +168,7 @@ export interface CutoffResult {
   ingresosArchived: number
   gastosArchived: number
   recordsKept: number
+  unconfirmedKept: number
   gastosGenerated: number
   ingresosGenerated: number
   markersCleared: number

@@ -1,6 +1,6 @@
 ---
-Versión: 2.7.0
-Última actualización: 2026-08-26
+Versión: 2.9.0
+Última actualización: 2026-10-03
 Autor: Abel Cejas
 Estado: Activo
 ---
@@ -9,6 +9,59 @@ Estado: Activo
 
 Todos los cambios notables del proyecto se documentan en este archivo.
 Formato basado en [Keep a Changelog](https://keepachangelog.com/es/1.0.0/).
+
+---
+
+## [2.9.0] - 2026-10-03
+
+Obligaciones editables y semanales, ciclo Por revisar → Pendiente → Pagado, menú de acciones único y Libertad Financiera filtrada. Detalle en `docs/releases/v2.9.0.md`.
+
+### Added
+- **Editar la fecha de inicio de una obligación y recalcular**: lápiz en cada regla recurrente y en "Primera cuota" de las obligaciones por cuotas (`updateObligationRuleStartDate`, `updateInstallmentsFirstDueDate`). Solo se recalcula lo que todavía no entró al dashboard; lo traído por un corte o ya pagado no se mueve.
+- **Reglas de gasto semanales** ("Semanal" en obligaciones, `ObligationRecurrence`; las reglas de ingreso siguen sin semanal). Un período de 4 semanas trae 4 gastos "Por revisar" con su fecha en el nombre (`Clases (5/10)`).
+- **Estado `CONFIRMED`** ("Pendiente" en gastos, "Por cobrar" en ingresos) entre Por revisar y Pagado/Cobrado. `validateReviewRecord()` valida sin pagar; pagar/cobrar acepta ambos estados. Badges Por revisar / Pendiente / Pagado (`FinancialRecord.generated` distingue lo generado de lo cargado a mano).
+- **Menú de acciones único** (`components/ui/row-actions-menu.tsx`): un botón "⋯" por fila del dashboard con Confirmar, Pagar/Cobrar, Ver detalle, Editar, Marcador (submenú) y Eliminar/Poner en cero.
+- **"Genera ingresos"** por activo (`Record.generatesIncome`, columna nueva con default falso; checkbox en el detalle del activo).
+
+### Changed
+- **Libertad Financiera** cuenta solo ingresos de activos marcados "Genera ingresos" (antes, cualquier ingreso vinculado a un activo: préstamos a cobrar o capital inflaban el número). Sin ninguno marcado muestra cómo activarlo.
+- El interruptor del corte pasa a "Mantener lo que sigue sin pagar ni cobrar" (cubre Por revisar y Pendiente).
+- `next.config.mjs` fija `process.env.TZ = "UTC"`: el server local corre igual que Vercel (en UTC-3 un lunes semanal caía en domingo).
+- El selector de marcador del dashboard pasa a un submenú de las acciones (para crear marcadores nuevos hay un acceso a Personalización).
+
+### Fixed
+- El detalle de una obligación no mostraba los cambios (nueva regla, cuota pagada) hasta recargar la página: guardaba una copia inicial del dato en estado.
+- Las fechas de obligaciones y reglas de ingreso se mostraban un día antes (medianoche UTC mostrada en hora local).
+- Gastos dentro de un grupo de flujo no mostraban badge ni opción de pagar.
+
+---
+
+## [2.8.0] - 2026-10-01
+
+Ingresos y gastos "Por revisar", agrupación de obligaciones, módulo de gráficos y limpieza de la documentación. Detalle en `docs/releases/v2.8.0.md`.
+
+### Added
+- **Estado `REVIEW` ("Por revisar")** para ingresos/gastos que genera el corte (cuotas, pagos de obligaciones, cobros de reglas, dividendos). En el dashboard llevan badge y botón **Pagar** / **Cobrar** con el monto real editable → `confirmReviewRecord()` (`lib/review-actions.ts`) elige el origen y aplica su contabilidad.
+- Corte: switch **"Mantener lo que sigue sin confirmar"** (activo por defecto) — lo `REVIEW` cruza al período nuevo en vez de archivarse. Fechas de cada período en el diálogo ("1 sept – 30 sept") y en un ícono de info junto al botón (`periodRangeShort()`).
+- **Descripción** opcional en ingresos y gastos (formularios + fila nueva del dashboard); en el dashboard se ve como ícono de info con tooltip para todos los tipos (`components/ui/info-tip.tsx`).
+- Ingreso nuevo desde el dashboard vinculado a un **activo nuevo** ("+ Activo nuevo…").
+- **Agrupar / desagrupar obligaciones** (`Obligation.groupId` → `Group` `LIABILITY`, solo visual), en `/obligaciones` y como fila colapsable en el dashboard.
+- **Módulo `/graficos`** (sidebar → Inicio) y gráficos por módulo: proyección de ingresos y gastos a 12 meses con mes pico, peso mensual de obligaciones (subiendo/bajando), obligaciones y activos más pesados, evolución de activos. SVG propio, con tooltip y tabla.
+- `docs/REFERENCIA.md` (material de referencia que salió de `CLAUDE.md`) y `docs/modules/graficos.md`.
+
+### Changed
+- Nombres de activos, obligaciones, ingresos y gastos limitados a 30 caracteres; los existentes más largos se truncan con "…" en el dashboard.
+- Editar el monto de un ingreso/gasto generado lo propaga a su origen (`syncIngresoAmount` / `syncGastoAmount`): cambia el esperado si no se pagó/cobró, o corrige el pago y asienta la diferencia.
+- `acceptInstallmentPayment` / `acceptObligationPayment` aceptan el monto real pagado (antes siempre asentaban el esperado).
+- Los snapshots ya no guardan el padre de un grupo de activos (sus hijos ya están).
+- `CLAUDE.md` compactado de 276 a ~95 líneas, sin secciones desactualizadas; política de documentación simplificada (CHANGELOG + release notes, módulos después de implementar, sin bump de versión en cada doc). Docs puntuales ya implementados movidos a `docs/archive/`.
+
+### Fixed
+- **Gasto duplicado en el libro contable**: el corte asentaba cada cuota/pago de obligación al activarlo y pagarlo volvía a asentarlo. Ahora el corte no asienta y el asiento sale al pagar, por el monto real.
+- Rechazar una cuota no cancelaba su gasto vinculado (quedaba visible en el dashboard).
+- El total de activos de los snapshots contaba los grupos dos veces (gráfico de patrimonio de `/snapshots`).
+- Dashboard: las tablas Activos y Obligaciones tienen el mismo alto y la fila de total queda siempre al fondo.
+- La vista previa del corte rotulaba como "dividendos" también los cobros de reglas de ingreso.
 
 ---
 

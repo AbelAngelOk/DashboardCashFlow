@@ -20,7 +20,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { NumericInput } from "@/components/ui/numeric-input"
-import { MarkerPicker } from "@/components/markers/marker-picker"
+import { InfoTip } from "@/components/ui/info-tip"
+import { RowActionsMenu, type RowAction } from "@/components/ui/row-actions-menu"
 import { loadEntityMarkersForIds } from "@/lib/marker-actions"
 import type { MarkerDefinition } from "@/lib/marker-types"
 import {
@@ -44,6 +45,7 @@ import {
   ratesAgeDays,
   formatRatesAge,
   RATES_STALE_AFTER_DAYS,
+  NAME_MAX_LENGTH,
 } from "@/lib/finance"
 import type { FlowGroupWithMembers } from "@/lib/flow-group-actions"
 import { GroupValueDisplay } from "@/components/group-value-display"
@@ -126,14 +128,22 @@ interface DraftRow {
   amount: string
   currency: Currency
   linkedTo: string
+  description: string
+  /** Nombre del activo a crear cuando linkedTo === NEW_ASSET */
+  newAssetName: string
 }
+
+const NEW_ASSET = "__new__"
 
 interface ExtraRow {
   id: string
   name: string
   href: string
   paused?: boolean
+  description?: string
   valueNode: React.ReactNode
+  /** Presente cuando la fila es un grupo: se expande para mostrar sus miembros */
+  children?: ExtraRow[]
 }
 
 export type DashboardMovementType = "ADJUSTMENT" | "DEPOSIT" | "EXTRACT"
@@ -161,6 +171,12 @@ interface DashboardSheetProps {
   ) => void
   onAddObligation?: () => void
   onAddAsset?: () => void
+  /** Pagar / cobrar un registro "Por revisar" con el monto real */
+  onConfirmReview?: (record: FinancialRecord, amount: number) => Promise<void>
+  /** Valida un registro "Por revisar" sin pagarlo ni cobrarlo */
+  onValidateReview?: (record: FinancialRecord) => Promise<void>
+  /** Crea un activo vacío para vincularle un ingreso; devuelve su id */
+  onCreateLinkedAsset?: (name: string, currency: Currency) => Promise<string>
 }
 
 function CurrencySelect({
@@ -236,6 +252,30 @@ function SectionTableEmpty({ type }: { type: RecordType }) {
   )
 }
 
+// ── Estado de un ingreso/gasto generado ──────────────────────────────────────
+
+function StatusBadge({ record, type }: { record: FinancialRecord; type: RecordType }) {
+  const base = "shrink-0 border px-1 text-[10px] font-bold uppercase"
+  if (record.status === "REVIEW") {
+    return <span data-testid="review-badge" className={`${base} border-amber-500 text-amber-700`}>Por revisar</span>
+  }
+  if (record.status === "CONFIRMED") {
+    return (
+      <span data-testid="pending-badge" className={`${base} border-black text-black`}>
+        {type === "gasto" ? "Pendiente" : "Por cobrar"}
+      </span>
+    )
+  }
+  if (record.status === "ACTIVE" && record.generated) {
+    return (
+      <span data-testid="settled-badge" className={`${base} border-emerald-600 text-emerald-700`}>
+        {type === "gasto" ? "Pagado" : "Cobrado"}
+      </span>
+    )
+  }
+  return null
+}
+
 // ── SectionTable ─────────────────────────────────────────────────────────────
 
 interface SectionTableProps {
@@ -270,6 +310,9 @@ interface SectionTableProps {
     createGasto: boolean,
     createIngreso: boolean,
   ) => void
+  onConfirmReview?: (record: FinancialRecord, amount: number) => Promise<void>
+  onValidateReview?: (record: FinancialRecord) => Promise<void>
+  onCreateLinkedAsset?: (name: string, currency: Currency) => Promise<string>
 }
 
 function SectionTable({
@@ -293,8 +336,13 @@ function SectionTable({
   onBreakdown,
   onDeleteWithComment,
   onEditAmountWithComment,
+  onConfirmReview,
+  onValidateReview,
+  onCreateLinkedAsset,
 }: SectionTableProps) {
   const [newRows, setNewRows] = useState<DraftRow[]>([])
+  const [confirming, setConfirming] = useState<{ record: FinancialRecord; amount: string } | null>(null)
+  const [confirmBusy, setConfirmBusy] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDraft, setEditDraft] = useState<DraftRow | null>(null)
   const [nameError, setNameError] = useState<string | null>(null)
@@ -351,6 +399,8 @@ function SectionTable({
     amount: "",
     currency: defaultCurrency,
     linkedTo: "",
+    description: "",
+    newAssetName: "",
   })
 
   const addNewRow = () => setNewRows((rows) => [...rows, emptyDraft()])
@@ -363,16 +413,22 @@ function SectionTable({
   const removeNewRow = (id: string) =>
     setNewRows((rows) => rows.filter((r) => r.id !== id))
 
-  const saveNewRow = (row: DraftRow) => {
+  const saveNewRow = async (row: DraftRow) => {
     if (!row.name || !row.amount) return
+    let linkedTo = row.linkedTo && row.linkedTo !== "none" ? row.linkedTo : undefined
+    if (linkedTo === NEW_ASSET) {
+      const assetName = row.newAssetName.trim()
+      if (!assetName || !onCreateLinkedAsset) return
+      linkedTo = await onCreateLinkedAsset(assetName, row.currency)
+    }
     onCreate?.({
       id: row.id,
       type,
       name: row.name,
       amount: Number.parseFloat(row.amount),
       currency: row.currency,
-      linkedTo:
-        row.linkedTo && row.linkedTo !== "none" ? row.linkedTo : undefined,
+      linkedTo,
+      description: row.description.trim() || undefined,
     })
     removeNewRow(row.id)
   }
@@ -386,7 +442,89 @@ function SectionTable({
       amount: String(record.amount),
       currency: record.currency,
       linkedTo: record.linkedTo ?? "none",
+      description: record.description ?? "",
+      newAssetName: "",
     })
+  }
+
+  const openConfirm = (record: FinancialRecord) =>
+    setConfirming({ record, amount: String(record.amount) })
+
+  const detailHref = (record: FinancialRecord) =>
+    record.type === "activo" ? `/activos/${record.id}`
+    : record.type === "ingreso" ? `/ingresos/${record.id}`
+    : record.type === "gasto" ? `/gastos/${record.id}`
+    : undefined
+
+  const actionsFor = (record: FinancialRecord, opts?: { zeroOut?: boolean }): RowAction[] => {
+    const list: RowAction[] = []
+    const unsettled = record.status === "REVIEW" || record.status === "CONFIRMED"
+    if (unsettled && onConfirmReview) {
+      if (record.status === "REVIEW" && onValidateReview) {
+        list.push({
+          key: "validate",
+          label: "Confirmar",
+          icon: <Check className="h-3.5 w-3.5" />,
+          onSelect: () => { void onValidateReview(record) },
+        })
+      }
+      list.push({
+        key: "settle",
+        label: record.type === "gasto" ? "Pagar…" : "Cobrar…",
+        icon: <Check className="h-3.5 w-3.5" />,
+        onSelect: () => openConfirm(record),
+      })
+    }
+    const href = detailHref(record)
+    if (href) list.push({ key: "view", label: "Ver detalle", icon: <Eye className="h-3.5 w-3.5" />, href })
+    if (!record.isGroupParent) {
+      list.push({ key: "edit", label: "Editar", icon: <Pencil className="h-3.5 w-3.5" />, onSelect: () => startEdit(record) })
+      if (opts?.zeroOut) {
+        if (onDeleteWithComment && record.amount !== 0) {
+          list.push({
+            key: "zero",
+            label: "Poner en cero",
+            icon: <Trash2 className="h-3.5 w-3.5" />,
+            destructive: true,
+            onSelect: () => { setPendingDelete(record); setDeleteComment(""); setDeleteCreateIngreso(false) },
+          })
+        }
+      } else {
+        list.push({
+          key: "delete",
+          label: "Eliminar",
+          icon: <Trash2 className="h-3.5 w-3.5" />,
+          destructive: true,
+          onSelect: () => handleDeleteClick(record),
+        })
+      }
+    }
+    return list
+  }
+
+  const actionsMenu = (record: FinancialRecord, opts?: { zeroOut?: boolean }) => (
+    <RowActionsMenu
+      actions={actionsFor(record, opts)}
+      marker={{
+        entityId: record.id,
+        entityType: "RECORD",
+        current: markerMap[record.id] ?? null,
+        onChanged: () => refreshMarkers(records.map((r) => r.id)),
+      }}
+    />
+  )
+
+  const submitConfirm = async () => {
+    if (!confirming || !onConfirmReview) return
+    const amount = Number(confirming.amount)
+    if (!(amount > 0)) return
+    setConfirmBusy(true)
+    try {
+      await onConfirmReview(confirming.record, amount)
+      setConfirming(null)
+    } finally {
+      setConfirmBusy(false)
+    }
   }
 
   const cancelEdit = () => {
@@ -422,6 +560,10 @@ function SectionTable({
       parentId: previous.parentId,
       assetType: previous.assetType,
       isGroupParent: previous.isGroupParent,
+      status: previous.status,
+      // La descripción de un activo se edita en su detalle (editor rico)
+      // "" (no undefined) para que borrar la descripción la borre también en la DB
+      description: type === "activo" ? previous.description : editDraft.description.trim(),
     }
 
     const amountChanged = updated.amount !== previous.amount
@@ -479,7 +621,7 @@ function SectionTable({
           : "dashboard-liabilities-table"
 
   return (
-    <div data-testid={testId} className="border-2 border-black">
+    <div data-testid={testId} className="flex h-full flex-col border-2 border-black">
       <div className="flex items-center justify-between border-b-2 border-black bg-black px-2 py-1">
         <span className="font-bold italic text-white">{title}</span>
         {!readOnly && !loading && (
@@ -497,7 +639,7 @@ function SectionTable({
 
       {/* Column headers */}
       <div className="flex border-b border-black bg-gray-100 text-sm font-bold">
-        <div className="flex-1 border-r border-black px-2 py-1">Descripción</div>
+        <div className="flex-1 border-r border-black px-2 py-1">Nombre</div>
         <div className="w-36 border-r border-black px-2 py-1 text-right">
           {valueLabel}
         </div>
@@ -509,6 +651,7 @@ function SectionTable({
         {!readOnly && <div className="w-20 px-1 py-1 text-center">Acción</div>}
       </div>
 
+      <div className="flex-1">
       {loading ? (
         <SectionTableSkeleton />
       ) : isEmpty ? (
@@ -571,23 +714,15 @@ function SectionTable({
                     className="group flex border-b border-black bg-gray-50/50 text-sm"
                     style={marker ? { borderLeft: `4px solid ${marker.color}`, backgroundColor: `${marker.color}18` } : undefined}
                   >
-                    <div className="flex-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">{member.name}</div>
+                    <div className="flex min-w-0 flex-1 items-center gap-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">
+                      <span className="truncate" title={member.name}>{member.name}</span>
+                      {member.description && <InfoTip label={`Descripción de ${member.name}`}>{member.description}</InfoTip>}
+                      <StatusBadge record={member} type={type} />
+                    </div>
                     <div className="w-36 border-r border-black px-2 py-1 text-right text-gray-600"><RecordAmount record={member} /></div>
                     {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
                     {!readOnly && (
-                      <div className="flex w-20 items-center justify-center gap-1 px-1">
-                        <MarkerPicker entityId={member.id} entityType="RECORD" currentMarker={marker} onChanged={() => refreshMarkers(records.map((r) => r.id))} />
-                        <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                          {type === "ingreso" && (
-                            <Link href={`/ingresos/${member.id}`} className="text-gray-500 hover:text-black" aria-label="Ver ingreso"><Eye className="h-3.5 w-3.5" /></Link>
-                          )}
-                          {type === "gasto" && (
-                            <Link href={`/gastos/${member.id}`} className="text-gray-500 hover:text-black" aria-label="Ver gasto"><Eye className="h-3.5 w-3.5" /></Link>
-                          )}
-                          <button onClick={() => startEdit(member)} className="text-gray-500 hover:text-black" aria-label="Editar"><Pencil className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => handleDeleteClick(member)} className="text-gray-500 hover:text-rose-700" aria-label="Eliminar"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </div>
-                      </div>
+                      <div className="flex w-20 items-center justify-center px-1">{actionsMenu(member)}</div>
                     )}
                   </div>
                 )
@@ -609,6 +744,7 @@ function SectionTable({
               <div className="flex-1 border-r border-black px-1 py-0.5">
                 <Input
                   value={editDraft.name}
+                  maxLength={NAME_MAX_LENGTH}
                   onChange={(e) => {
                     setEditDraft({ ...editDraft, name: e.target.value })
                     setNameError(null)
@@ -666,6 +802,16 @@ function SectionTable({
                 </button>
               </div>
             </div>
+            {!isActivo && (
+              <div className="border-t border-dashed border-gray-300 px-1 py-0.5">
+                <Input
+                  value={editDraft.description}
+                  onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })}
+                  placeholder="Descripción (opcional)"
+                  className="h-6 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+                />
+              </div>
+            )}
             {nameError && (
               <div className="px-2 py-1 text-xs text-rose-600">{nameError}</div>
             )}
@@ -680,8 +826,8 @@ function SectionTable({
                 backgroundColor: `${marker.color}18`,
               } : undefined}
             >
-              <div className="flex-1 border-r border-black px-2 py-1">
-                <div className="flex items-center gap-1">
+              <div className="min-w-0 flex-1 border-r border-black px-2 py-1">
+                <div className="flex min-w-0 items-center gap-1">
                   {record.isGroupParent && (
                     <button
                       onClick={() => toggleGroup(record.id)}
@@ -695,12 +841,19 @@ function SectionTable({
                       )}
                     </button>
                   )}
-                  <span className={record.isGroupParent ? "font-semibold" : ""}>
+                  <span
+                    className={`truncate ${record.isGroupParent ? "font-semibold" : ""}`}
+                    title={record.name}
+                  >
                     {record.name}
                   </span>
+                  {record.description && (
+                    <InfoTip label={`Descripción de ${record.name}`}>{record.description}</InfoTip>
+                  )}
                   {record.isGroupParent && (
                     <Network className="h-3 w-3 shrink-0 text-gray-300" />
                   )}
+                  <StatusBadge record={record} type={type} />
                 </div>
               </div>
               <div className="w-36 border-r border-black px-2 py-1 text-right">
@@ -716,62 +869,7 @@ function SectionTable({
                 </div>
               )}
               {!readOnly && (
-                <div className="flex w-20 items-center justify-center gap-1 px-1">
-                  <MarkerPicker
-                    entityId={record.id}
-                    entityType="RECORD"
-                    currentMarker={marker}
-                    onChanged={() => refreshMarkers(records.map((r) => r.id))}
-                  />
-                  <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {isActivo && (
-                      <Link
-                        href={`/activos/${record.id}`}
-                        className="text-gray-500 hover:text-black"
-                        aria-label="Ver activo"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Link>
-                    )}
-                    {type === "ingreso" && (
-                      <Link
-                        href={`/ingresos/${record.id}`}
-                        className="text-gray-500 hover:text-black"
-                        aria-label="Ver ingreso"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Link>
-                    )}
-                    {type === "gasto" && (
-                      <Link
-                        href={`/gastos/${record.id}`}
-                        className="text-gray-500 hover:text-black"
-                        aria-label="Ver gasto"
-                      >
-                        <Eye className="h-3.5 w-3.5" />
-                      </Link>
-                    )}
-                    {/* Groups: no edit/delete from dashboard */}
-                    {!record.isGroupParent && (
-                      <>
-                        <button
-                          onClick={() => startEdit(record)}
-                          className="text-gray-500 hover:text-black"
-                          aria-label="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteClick(record)}
-                          className="text-gray-500 hover:text-rose-700"
-                          aria-label="Eliminar"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
+                <div className="flex w-20 items-center justify-center px-1">{actionsMenu(record)}</div>
               )}
             </div>
 
@@ -779,46 +877,19 @@ function SectionTable({
             {record.isGroupParent && expandedGroupIds.has(record.id) &&
               getGroupChildren(record.id).map((child) => (
                 <div key={child.id} className="group flex border-b border-black bg-gray-50/50 text-sm">
-                  <div className="flex-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">
-                    {child.name}
+                  <div className="flex min-w-0 flex-1 items-center gap-1 border-r border-black py-1 pl-8 pr-2 text-gray-600">
+                    <span className="truncate" title={child.name}>{child.name}</span>
+                    {child.description && (
+                      <InfoTip label={`Descripción de ${child.name}`}>{child.description}</InfoTip>
+                    )}
                   </div>
                   <div className="w-36 border-r border-black px-2 py-1 text-right text-gray-600">
                     <RecordAmount record={child} />
                   </div>
                   {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
                   {!readOnly && (
-                    <div className="flex w-20 items-center justify-center gap-1 px-1">
-                      <MarkerPicker
-                        entityId={child.id}
-                        entityType="RECORD"
-                        currentMarker={markerMap[child.id] ?? null}
-                        onChanged={() => refreshMarkers(records.map((r) => r.id))}
-                      />
-                      <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                        <Link
-                          href={`/activos/${child.id}`}
-                          className="text-gray-500 hover:text-black"
-                          aria-label="Ver activo"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Link>
-                        <button
-                          onClick={() => startEdit(child)}
-                          className="text-gray-500 hover:text-black"
-                          aria-label="Editar"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        {onDeleteWithComment && child.amount !== 0 && (
-                          <button
-                            onClick={() => { setPendingDelete(child); setDeleteComment(""); setDeleteCreateIngreso(false) }}
-                            className="text-gray-500 hover:text-rose-700"
-                            aria-label="Poner en cero"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
+                    <div className="flex w-20 items-center justify-center px-1">
+                      {actionsMenu(child, { zeroOut: true })}
                     </div>
                   )}
                 </div>
@@ -828,42 +899,77 @@ function SectionTable({
       })}
 
       {/* Extra rows (e.g. obligations merged into pasivos) */}
-      {extraRows?.map((row) => (
-        <div key={row.id} className="group flex border-b border-black text-sm hover:bg-gray-50">
-          <div className="flex flex-1 items-center gap-2 border-r border-black px-2 py-1">
-            <Link href={row.href} className="font-medium hover:underline">
-              {row.name}
-            </Link>
-            {row.paused && (
-              <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
-                Pausada
-              </span>
+      {extraRows?.map((row) => {
+        const renderRow = (r: ExtraRow, nested: boolean) => (
+          <div key={r.id} className={`group flex border-b border-black text-sm hover:bg-gray-50 ${nested ? "bg-gray-50/50" : ""}`}>
+            <div className={`flex min-w-0 flex-1 items-center gap-1 border-r border-black py-1 pr-2 ${nested ? "pl-8" : "pl-2"}`}>
+              <Link href={r.href} className="truncate font-medium hover:underline" title={r.name}>
+                {r.name}
+              </Link>
+              {r.description && <InfoTip label={`Descripción de ${r.name}`}>{r.description}</InfoTip>}
+              {r.paused && (
+                <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                  Pausada
+                </span>
+              )}
+            </div>
+            <div className="w-36 border-r border-black px-2 py-1 text-right text-sm">
+              {r.valueNode}
+            </div>
+            {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
+            {!readOnly && (
+              <div className="flex w-20 items-center justify-center px-1">
+                <RowActionsMenu
+                  actions={[{ key: "view", label: "Ver detalle", icon: <Eye className="h-3.5 w-3.5" />, href: r.href }]}
+                />
+              </div>
             )}
           </div>
-          <div className="w-36 border-r border-black px-2 py-1 text-right text-sm">
-            {row.valueNode}
-          </div>
-          {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
-          {!readOnly && (
-            <div className="flex w-20 items-center justify-center px-1 opacity-0 transition-opacity group-hover:opacity-100">
-              <Link href={row.href} className="text-gray-400 hover:text-black" aria-label="Ver obligación">
-                <Eye className="h-3.5 w-3.5" />
-              </Link>
+        )
+
+        if (!row.children) return renderRow(row, false)
+
+        const isOpen = expandedGroupIds.has(row.id)
+        return (
+          <div key={row.id}>
+            <div className="flex border-b border-black bg-gray-50 text-sm font-semibold">
+              <div className="flex min-w-0 flex-1 items-center gap-1 border-r border-black px-2 py-1">
+                <button
+                  onClick={() => toggleGroup(row.id)}
+                  className="shrink-0 text-gray-400 hover:text-black"
+                  aria-label={isOpen ? "Colapsar" : "Expandir"}
+                >
+                  {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+                <span className="truncate" title={row.name}>{row.name}</span>
+                <Network className="h-3 w-3 shrink-0 text-gray-300" />
+                <span className="rounded-full bg-gray-200 px-1.5 text-[10px] font-normal text-gray-600">
+                  {row.children.length}
+                </span>
+              </div>
+              <div className="w-36 border-r border-black px-2 py-1 text-right text-sm font-normal">
+                {row.valueNode}
+              </div>
+              {hasLink && <div className="hidden w-24 border-r border-black px-2 py-1 sm:block" />}
+              {!readOnly && <div className="w-20" />}
             </div>
-          )}
-        </div>
-      ))}
+            {isOpen && row.children.map((child) => renderRow(child, true))}
+          </div>
+        )
+      })}
         </>
       )}
 
       {/* New editable rows */}
       {!readOnly &&
         newRows.map((row) => (
-          <div key={row.id} className="flex border-b border-black text-sm">
+          <div key={row.id} className="flex flex-col border-b border-black text-sm">
+          <div className="flex">
             <div className="flex-1 border-r border-black px-1 py-0.5">
               <Input
-                placeholder="Descripción..."
+                placeholder="Nombre..."
                 value={row.name}
+                maxLength={NAME_MAX_LENGTH}
                 autoFocus
                 onChange={(e) => updateNewRow(row.id, "name", e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveNewRow(row)}
@@ -899,6 +1005,9 @@ function SectionTable({
                         {o.name}
                       </SelectItem>
                     ))}
+                    {linkType === "activo" && onCreateLinkedAsset && (
+                      <SelectItem value={NEW_ASSET}>+ Activo nuevo…</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
               </div>
@@ -920,7 +1029,27 @@ function SectionTable({
               </button>
             </div>
           </div>
+          <div className="flex gap-2 border-t border-dashed border-gray-300 px-1 py-0.5">
+            <Input
+              value={row.description}
+              onChange={(e) => updateNewRow(row.id, "description", e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveNewRow(row)}
+              placeholder="Descripción (opcional)"
+              className="h-6 flex-1 border-0 bg-transparent p-0 text-xs shadow-none focus-visible:ring-0"
+            />
+            {row.linkedTo === NEW_ASSET && (
+              <Input
+                value={row.newAssetName}
+                maxLength={NAME_MAX_LENGTH}
+                onChange={(e) => updateNewRow(row.id, "newAssetName", e.target.value)}
+                placeholder="Nombre del activo nuevo *"
+                className="h-6 w-48 border-0 border-l border-gray-300 bg-transparent px-1 text-xs shadow-none focus-visible:ring-0"
+              />
+            )}
+          </div>
+          </div>
         ))}
+      </div>
 
       {/* Totals footer */}
       <div className="flex items-center border-t-2 border-black bg-gray-100 text-sm font-bold">
@@ -935,6 +1064,59 @@ function SectionTable({
           )}
         </div>
       </div>
+
+      {/* Pagar / cobrar un registro por revisar */}
+      {confirming && (
+        <DialogPrimitive.Root open onOpenChange={(o) => { if (!o && !confirmBusy) setConfirming(null) }}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/40" />
+            <DialogPrimitive.Content
+              data-testid="review-confirm-dialog"
+              className="fixed left-1/2 top-1/2 z-50 w-full max-w-sm -translate-x-1/2 -translate-y-1/2 border-2 border-black bg-white"
+            >
+              <div className="border-b-2 border-black bg-black px-4 py-3">
+                <DialogPrimitive.Title className="font-bold italic text-white">
+                  {type === "gasto" ? "Pagar" : "Cobrar"} — {confirming.record.name}
+                </DialogPrimitive.Title>
+              </div>
+              <div className="flex flex-col gap-3 px-4 py-4">
+                <DialogPrimitive.Description className="text-xs text-gray-600">
+                  {type === "gasto"
+                    ? "Registra el pago con el monto real: la cuota queda pagada en la obligación y se asienta en el libro contable."
+                    : "Registra el cobro con el monto real: queda en el historial del activo y se asienta en el libro contable."}
+                </DialogPrimitive.Description>
+                <div className="flex flex-col gap-1">
+                  <Label className="text-xs font-bold uppercase">
+                    Monto {type === "gasto" ? "pagado" : "cobrado"} ({confirming.record.currency})
+                  </Label>
+                  <NumericInput
+                    value={confirming.amount}
+                    onChange={(v) => setConfirming((c) => (c ? { ...c, amount: v } : c))}
+                    className="border-2 border-black"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 border-t-2 border-black px-4 py-3">
+                <Button
+                  variant="outline"
+                  className="border-2 border-black"
+                  onClick={() => setConfirming(null)}
+                  disabled={confirmBusy}
+                >
+                  Cancelar
+                </Button>
+                <Button
+                  className="bg-black text-white hover:bg-gray-800"
+                  onClick={submitConfirm}
+                  disabled={confirmBusy || !(Number(confirming.amount) > 0)}
+                >
+                  {confirmBusy ? "Guardando…" : type === "gasto" ? "Confirmar pago" : "Confirmar cobro"}
+                </Button>
+              </div>
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
+      )}
 
       {/* Delete asset dialog */}
       {pendingDelete && (
@@ -1110,55 +1292,82 @@ export function DashboardSheet({
   onEditAmountWithComment,
   onAddObligation,
   onAddAsset,
+  onConfirmReview,
+  onValidateReview,
+  onCreateLinkedAsset,
 }: DashboardSheetProps) {
   const { settings } = useSettings()
   const { convertCurrencies, baseCurrency, exchangeRates, ratesLastUpdated } = settings
   const { obligations, loading: obligationsLoading } = useObligations()
   const staleRates = convertCurrencies && (ratesAgeDays(ratesLastUpdated) === null || (ratesAgeDays(ratesLastUpdated) ?? 0) > RATES_STALE_AFTER_DAYS)
 
-  const obligationExtraRows: ExtraRow[] = readOnly
+  const obligationValues = (o: (typeof obligations)[number]): Partial<Record<Currency, number>> =>
+    o.obligationType === "RECURRING" ? computeRecurringBreakdown(o.rules) : { [o.currency]: o.amount }
+
+  const valueNodeOf = (values: Partial<Record<Currency, number>>, annual: boolean): React.ReactNode => {
+    const entries = Object.entries(values).filter(([, v]) => (v ?? 0) > 0) as [Currency, number][]
+    if (entries.length === 0) return <span className="text-gray-400">—</span>
+    if (convertCurrencies) {
+      const total = entries.reduce(
+        (s, [cur, val]) => s + convertAmount(val, cur, baseCurrency as Currency, exchangeRates),
+        0,
+      )
+      return (
+        <div className="flex flex-col items-end leading-tight">
+          <span>{formatAmount(total, baseCurrency as Currency)} {baseCurrency}</span>
+          {annual && <span className="text-[10px] text-gray-400">anual</span>}
+        </div>
+      )
+    }
+    return (
+      <div className="flex flex-col items-end gap-0.5 leading-tight">
+        {entries.map(([cur, val]) => (
+          <span key={cur}>{formatAmount(val, cur)} {cur}</span>
+        ))}
+        {annual && <span className="text-[10px] text-gray-400">anual</span>}
+      </div>
+    )
+  }
+
+  const liveObligations = readOnly
     ? []
-    : obligations
-        .filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")
-        .map((o) => {
-          let valueNode: React.ReactNode
-          if (o.obligationType === "RECURRING") {
-            const breakdown = computeRecurringBreakdown(o.rules)
-            const entries = Object.entries(breakdown).filter(([, v]) => v > 0) as [Currency, number][]
-            if (entries.length === 0) {
-              valueNode = <span className="text-gray-400">—</span>
-            } else if (convertCurrencies) {
-              const total = entries.reduce(
-                (s, [cur, val]) => s + convertAmount(val, cur, baseCurrency as Currency, exchangeRates),
-                0,
-              )
-              valueNode = (
-                <div className="flex flex-col items-end leading-tight">
-                  <span>{formatAmount(total, baseCurrency as Currency)} {baseCurrency}</span>
-                  <span className="text-[10px] text-gray-400">anual</span>
-                </div>
-              )
-            } else {
-              valueNode = (
-                <div className="flex flex-col items-end gap-0.5 leading-tight">
-                  {entries.map(([cur, val]) => (
-                    <span key={cur}>{formatAmount(val, cur)} {cur}</span>
-                  ))}
-                  <span className="text-[10px] text-gray-400">anual</span>
-                </div>
-              )
-            }
-          } else {
-            valueNode = <span>{formatAmount(o.amount, o.currency)} {o.currency}</span>
-          }
-          return {
-            id: o.id,
-            name: o.name,
-            href: `/obligaciones/${o.id}`,
-            paused: o.status === "PAUSED",
-            valueNode,
-          }
-        })
+    : obligations.filter((o) => o.status === "ACTIVE" || o.status === "PAUSED")
+
+  const toExtraRow = (o: (typeof obligations)[number]): ExtraRow => ({
+    id: o.id,
+    name: o.name,
+    description: o.description,
+    href: `/obligaciones/${o.id}`,
+    paused: o.status === "PAUSED",
+    valueNode: valueNodeOf(obligationValues(o), o.obligationType === "RECURRING"),
+  })
+
+  // Las obligaciones agrupadas se muestran como una fila colapsable, igual que los grupos de activos
+  const obligationExtraRows: ExtraRow[] = []
+  const obligationGroupRows = new Map<string, ExtraRow>()
+  for (const o of liveObligations) {
+    if (!o.groupId) {
+      obligationExtraRows.push(toExtraRow(o))
+      continue
+    }
+    let group = obligationGroupRows.get(o.groupId)
+    if (!group) {
+      group = { id: o.groupId, name: o.groupName ?? "Grupo", href: "/obligaciones", valueNode: null, children: [] }
+      obligationGroupRows.set(o.groupId, group)
+      obligationExtraRows.push(group)
+    }
+    group.children!.push(toExtraRow(o))
+  }
+  for (const [groupId, group] of obligationGroupRows) {
+    const members = liveObligations.filter((o) => o.groupId === groupId)
+    const summed: Partial<Record<Currency, number>> = {}
+    for (const m of members) {
+      for (const [cur, v] of Object.entries(obligationValues(m)) as [Currency, number][]) {
+        summed[cur] = (summed[cur] ?? 0) + v
+      }
+    }
+    group.valueNode = valueNodeOf(summed, false)
+  }
 
   const ingresos = records.filter((r) => r.type === "ingreso")
   const gastos = records.filter((r) => r.type === "gasto")
@@ -1197,10 +1406,12 @@ export function DashboardSheet({
   // dashboard: qué porción de tu gasto ya está cubierta por ingreso que viene
   // de activos (linkedTo -> un record type "activo", el mismo vínculo que ya
   // usa la columna "Activo" de la tabla Ingresos), no de tu trabajo. Ver
-  // PRODUCT_REVIEW.md §3.1 — antes se calculaba implícitamente pero nunca se
+  // docs/archive/PRODUCT_REVIEW.md §3.1 — antes se calculaba implícitamente pero nunca se
   // mostraba en ningún lado.
-  const activoIds = new Set(records.filter((r) => r.type === "activo").map((r) => r.id))
-  const ingresosPasivos = ingresos.filter((r) => r.linkedTo && activoIds.has(r.linkedTo))
+  // Solo cuentan los activos marcados "Genera ingresos" (un negocio, una renta):
+  // préstamos a cobrar, ahorro o spot acumulan capital pero no son flujo.
+  const incomeAssetIds = new Set(records.filter((r) => r.type === "activo" && r.generatesIncome).map((r) => r.id))
+  const ingresosPasivos = ingresos.filter((r) => r.linkedTo && incomeAssetIds.has(r.linkedTo))
   const convertedIngresosPasivos = calculateTotalsConverted(ingresosPasivos, baseCurrency, exchangeRates)
   const libertadFinancieraPct =
     convertedGastos > 0 ? (convertedIngresosPasivos / convertedGastos) * 100 : null
@@ -1219,6 +1430,9 @@ export function DashboardSheet({
               type="ingreso"
               records={ingresos}
               allRecords={records}
+              onConfirmReview={onConfirmReview}
+              onValidateReview={onValidateReview}
+              onCreateLinkedAsset={onCreateLinkedAsset}
               loading={loading}
               valueLabel="Flujo de Caja"
               linkType="activo"
@@ -1234,6 +1448,8 @@ export function DashboardSheet({
               type="gasto"
               records={gastos}
               allRecords={records}
+              onConfirmReview={onConfirmReview}
+              onValidateReview={onValidateReview}
               loading={loading}
               valueLabel="Monto"
               readOnly={readOnly}
@@ -1271,6 +1487,11 @@ export function DashboardSheet({
                   <p className="mt-1 text-xs text-gray-400">
                     Sin gastos activos todavía — no hay contra qué medirlo.
                   </p>
+                ) : incomeAssetIds.size === 0 ? (
+                  <p data-testid="libertad-sin-activos" className="mt-1 text-xs text-gray-500">
+                    Ningún activo está marcado como generador de ingresos. Entrá al detalle de tu
+                    negocio o renta y activá “Genera ingresos” para medir cuánto de tu gasto cubre.
+                  </p>
                 ) : (
                   <>
                     <div
@@ -1288,7 +1509,7 @@ export function DashboardSheet({
                     </div>
                     <p className="mt-1 text-[11px] text-gray-500">
                       {formatAmount(convertedIngresosPasivos, baseCurrency)} {baseCurrency} de ingreso de
-                      activos {" "}
+                      activos que generan ingresos {" "}
                       {libertadFinancieraPct >= 100 ? "cubren y superan" : "cubren"} tu gasto total
                       {!convertCurrencies && (
                         <span className="text-gray-400"> (convertido a {baseCurrency} para poder comparar)</span>

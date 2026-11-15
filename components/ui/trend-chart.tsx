@@ -1,7 +1,7 @@
 "use client"
 
 // Gráfico de línea mínimo, sin dependencias (nada de recharts — ver
-// PRODUCT_REVIEW.md §5.2: no hace falta reinstalar una librería pesada para
+// docs/archive/PRODUCT_REVIEW.md §5.2: no hace falta reinstalar una librería pesada para
 // una sola curva). Pensado para pocos puntos (snapshots), no para series
 // largas.
 

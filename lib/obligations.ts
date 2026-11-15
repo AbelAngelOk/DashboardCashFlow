@@ -5,6 +5,8 @@ import type { Currency } from "@/lib/finance"
 export type ObligationType = "RECURRING" | "INSTALLMENT" | "FIXED"
 export type ObligationStatus = "ACTIVE" | "PAUSED" | "COMPLETED" | "CANCELLED"
 export type RecurrenceType = "MONTHLY" | "QUARTERLY" | "SEMI_ANNUAL" | "ANNUAL"
+/** Las obligaciones admiten además pagos semanales; las reglas de ingreso no (siguen con RecurrenceType). */
+export type ObligationRecurrence = RecurrenceType | "WEEKLY"
 export type InstallmentStatus = "PENDING" | "OVERDUE" | "PAID" | "REJECTED"
 export type PaymentType = "PAYMENT" | "INTEREST" | "FEE"
 export type PaymentStatus = "PENDING" | "PAID" | "REJECTED"
@@ -29,6 +31,11 @@ export const RECURRENCE_TYPE_LABELS: Record<RecurrenceType, string> = {
   QUARTERLY: "Trimestral",
   SEMI_ANNUAL: "Semestral",
   ANNUAL: "Anual",
+}
+
+export const OBLIGATION_RECURRENCE_LABELS: Record<ObligationRecurrence, string> = {
+  WEEKLY: "Semanal",
+  ...RECURRENCE_TYPE_LABELS,
 }
 
 export const PAYMENT_TYPE_LABELS: Record<PaymentType, string> = {
@@ -60,13 +67,18 @@ export const OCCURRENCES_PER_YEAR: Record<RecurrenceType, number> = {
   ANNUAL: 1,
 }
 
+export const OBLIGATION_OCCURRENCES_PER_YEAR: Record<ObligationRecurrence, number> = {
+  WEEKLY: 52,
+  ...OCCURRENCES_PER_YEAR,
+}
+
 // ── Interfaces ────────────────────────────────────────────────────────────────
 
 export interface ObligationRule {
   id: string
   obligationId: string
   name: string
-  recurrenceType: RecurrenceType
+  recurrenceType: ObligationRecurrence
   startDate: string
   expectedAmount: number
   currency: Currency
@@ -109,6 +121,8 @@ export interface Obligation {
   status: ObligationStatus
   nextDueDate?: string
   createdAt: string
+  groupId?: string
+  groupName?: string
   rules: ObligationRule[]
   installments: ObligationInstallment[]
   payments: ObligationPayment[]
@@ -122,27 +136,35 @@ export function addMonths(date: Date, months: number): Date {
   return d
 }
 
+/** Siguiente fecha de una regla: +7 días si es semanal, +N meses si no. */
+export function nextRuleDate(date: Date, recurrence: ObligationRecurrence): Date {
+  if (recurrence === "WEEKLY") {
+    const d = new Date(date)
+    d.setDate(d.getDate() + 7)
+    return d
+  }
+  return addMonths(date, RECURRENCE_MONTHS[recurrence])
+}
+
 /** First occurrence of a rule that falls on or after `after`. */
 export function nextOccurrenceOnOrAfter(rule: ObligationRule, after: Date): Date {
-  const months = RECURRENCE_MONTHS[rule.recurrenceType]
   let date = new Date(rule.startDate)
   date.setHours(0, 0, 0, 0)
   const target = new Date(after)
   target.setHours(0, 0, 0, 0)
   while (date < target) {
-    date = addMonths(date, months)
+    date = nextRuleDate(date, rule.recurrenceType)
   }
   return date
 }
 
 /** All dates from `from` (inclusive) to `to` (inclusive) for a rule's schedule. */
 export function ruleDatesInWindow(rule: ObligationRule, from: Date, to: Date): Date[] {
-  const months = RECURRENCE_MONTHS[rule.recurrenceType]
   const dates: Date[] = []
   let date = nextOccurrenceOnOrAfter(rule, from)
   while (date <= to) {
     dates.push(new Date(date))
-    date = addMonths(date, months)
+    date = nextRuleDate(date, rule.recurrenceType)
   }
   return dates
 }
@@ -152,7 +174,7 @@ export function computeRecurringBreakdown(rules: ObligationRule[]): Partial<Reco
   const totals: Partial<Record<Currency, number>> = {}
   for (const rule of rules) {
     if (rule.status !== "ACTIVE") continue
-    const perYear = rule.expectedAmount * OCCURRENCES_PER_YEAR[rule.recurrenceType]
+    const perYear = rule.expectedAmount * OBLIGATION_OCCURRENCES_PER_YEAR[rule.recurrenceType]
     totals[rule.currency] = (totals[rule.currency] ?? 0) + perYear
   }
   return totals
@@ -166,10 +188,13 @@ export function pendingInstallmentsTotal(installments: ObligationInstallment[]):
 }
 
 export function formatObligationDate(iso: string): string {
+  // Las fechas de calendario se guardan a medianoche UTC: mostrarlas en hora
+  // local (UTC-3) las atrasaba un día.
   return new Date(iso).toLocaleDateString("es-AR", {
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
+    timeZone: "UTC",
   })
 }
 

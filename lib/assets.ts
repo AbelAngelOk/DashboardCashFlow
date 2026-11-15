@@ -233,6 +233,8 @@ export interface Asset {
   currency: Currency
   /** Capacidad: se opera en unidades (cantidad + precio promedio) */
   tracksQuantity: boolean
+  /** Es un negocio/renta que produce ingreso: cuenta en la Libertad Financiera */
+  generatesIncome: boolean
   currentQty?: number
   avgBuyPrice?: number
   description?: string

@@ -49,13 +49,27 @@ Gestionar las deudas y compromisos financieros periódicos del usuario: crear ob
 - Por cuota pendiente: botón "Registrar pago" → crea `ObligationPayment` + gasto tipo `"gasto"` con `status = "PENDING"` en el dashboard
 
 ### 4. Cuotas en el Dashboard
-- Las cuotas pendientes aparecen como filas extra en la sección de Pasivos del Dashboard
-- Tienen ícono Eye → `/obligaciones/{id}`
-- Los gastos asociados (`status = "PENDING"`) aparecen en la sección de Gastos cuando se convierten en activos (al confirmar el pago)
+- Las obligaciones activas aparecen como filas extra en la sección Obligaciones del Dashboard (ícono Eye → `/obligaciones/{id}`)
+- Las cuotas del período entran a Gastos con el corte como **Por revisar**, con botón **Pagar** y monto editable (ver `docs/modules/dashboard.md` §4b). Rechazar una cuota cancela su gasto.
 
 ### 5. Marcadores visuales
 - MarkerPicker por obligación en la lista
 - `entityType = "OBLIGATION"`
+
+### 6. Agrupar y desagrupar (v2.8.0)
+- Modo **Agrupar** en `/obligaciones`, igual que en activos: seleccionar ≥ 2 → "Crear nuevo grupo", o ≥ 1 → "Agregar a: {grupo}".
+- El grupo es **solo visual** (`Obligation.groupId` → `Group` con `groupType = "LIABILITY"`): no cambia montos, cuotas ni pagos. Fila colapsable con el valor sumado, en la lista y en el dashboard.
+- "Quitar del grupo" por fila y "Desagrupar" por grupo; un grupo que queda vacío se borra.
+- Actions: `createObligationGroup`, `assignObligationsToGroup`, `removeObligationFromGroup`, `ungroupObligations` en `lib/obligation-actions.ts`.
+
+### 6b. Editar la fecha de inicio y reglas semanales (v2.9.0)
+- Lápiz en cada regla recurrente y en "Primera cuota" (obligaciones por cuotas). Recalcula los pagos futuros: regenera los pagos cuyo gasto todavía es `PENDING`; los que un corte ya trajo al dashboard o ya se pagaron no se tocan. En cuotas, la cuota N pasa a primera + N-1 meses.
+- Recurrencia **Semanal** (`ObligationRecurrence = RecurrenceType | "WEEKLY"`): pago cada 7 días, 52 por año en la proyección anual. Solo obligaciones; las reglas de ingreso no la tienen.
+- Varios pagos de la misma obligación en un período entran al corte con la fecha en el nombre (`Clases (5/10)`).
+
+### 7. Gráficos (v2.8.0)
+- **Peso mensual**: lo que vence cada mes (pagos hechos hacia atrás, cuotas/pagos programados hacia adelante), con el promedio de los 6 meses anteriores vs los 6 próximos para ver si las obligaciones suben o bajan. Las obligaciones fijas sin cronograma no tienen fechas y no entran.
+- **Las más pesadas**: barras con el valor de cada obligación activa (costo anual si es recurrente, saldo si es en cuotas o fija). Ver `docs/modules/graficos.md`.
 
 ---
 

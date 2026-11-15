@@ -19,9 +19,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { currencies, type Currency } from "@/lib/finance"
+import { currencies, NAME_MAX_LENGTH, type Currency } from "@/lib/finance"
+import { Textarea } from "@/components/ui/textarea"
 import { useAssetCategories } from "@/components/activos/asset-categories-store"
 import { createFreeGasto, createGastoForExistingAsset, createGastoAndNewAsset } from "@/lib/gasto-actions"
+import { setRecordDescription } from "@/lib/actions"
 import { useFinance } from "@/components/finance-store"
 import { useSettings } from "@/components/settings-store"
 import type { FinancialRecord } from "@/lib/finance"
@@ -48,6 +50,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
   // ── Shared state ──────────────────────────────────────────────────────────
   const [sourceType, setSourceType] = useState<SourceType>("free")
   const [name, setName] = useState("")
+  const [description, setDescription] = useState("")
   const [amount, setAmount] = useState("")
   const [currency, setCurrency] = useState<Currency>("ARS")
   const [saving, setSaving] = useState(false)
@@ -62,6 +65,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
   const reset = () => {
     setSourceType("free")
     setName("")
+    setDescription("")
     setAmount("")
     setCurrency("ARS")
     setSelectedAssetId("")
@@ -81,7 +85,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
     return ""
   }
 
-  const effectiveName = name.trim() || suggestedGastoName()
+  const effectiveName = name.trim() || suggestedGastoName().slice(0, NAME_MAX_LENGTH)
 
   const canSave = (): boolean => {
     if (!effectiveName || !amount || Number(amount) <= 0) return false
@@ -97,19 +101,22 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
       const amountNum = Number(amount)
       const gastoName = effectiveName
 
+      let gastoId: string
       if (sourceType === "free") {
-        await createFreeGasto({ name: gastoName, amount: amountNum, currency })
+        gastoId = await createFreeGasto({ name: gastoName, amount: amountNum, currency })
       } else if (sourceType === "existing-asset") {
-        await createGastoForExistingAsset(
+        gastoId = await createGastoForExistingAsset(
           { name: gastoName, amount: amountNum, currency },
           selectedAssetId,
         )
       } else {
-        await createGastoAndNewAsset(
+        const created = await createGastoAndNewAsset(
           { name: gastoName, amount: amountNum, currency },
           { name: assetName.trim(), assetType: assetType || null, amount: amountNum, currency },
         )
+        gastoId = created.gastoId
       }
+      if (description.trim()) await setRecordDescription(gastoId, description)
 
       await reload()
       onCreated?.()
@@ -194,6 +201,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
                 <Label className="text-xs font-bold uppercase">Nombre del activo *</Label>
                 <Input
                   value={assetName}
+                  maxLength={NAME_MAX_LENGTH}
                   onChange={(e) => setAssetName(e.target.value)}
                   placeholder="Ej: Tesla Inc."
                   className="border-2 border-black"
@@ -225,6 +233,7 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
             </Label>
             <Input
               value={name}
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => setName(e.target.value)}
               placeholder={suggestedGastoName() || "Ej: Supermercado"}
               className="border-2 border-black"
@@ -232,6 +241,19 @@ export function GastoFormDialog({ open, onOpenChange, onCreated }: Props) {
             {sourceType !== "free" && !name.trim() && suggestedGastoName() && (
               <p className="text-xs text-gray-400">Se usará: "{suggestedGastoName()}"</p>
             )}
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-bold uppercase">
+              Descripción <span className="font-normal text-gray-400">(opcional)</span>
+            </Label>
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Detalle que se ve al pasar el mouse por el ícono de info en el dashboard"
+              rows={2}
+              className="border-2 border-black"
+            />
           </div>
 
           {/* Monto + Moneda */}

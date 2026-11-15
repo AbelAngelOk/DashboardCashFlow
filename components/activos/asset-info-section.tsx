@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { formatAmount } from "@/lib/finance"
+import { formatAmount, NAME_MAX_LENGTH } from "@/lib/finance"
 import { type Asset, type AssetType, ASSET_TYPE_LABELS } from "@/lib/assets"
 import { updateAsset } from "@/lib/assets-actions"
 import { useAssetCategories } from "@/components/activos/asset-categories-store"
@@ -171,6 +171,7 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
             <Input
               autoFocus
               value={draft}
+              maxLength={NAME_MAX_LENGTH}
               onChange={(e) => setDraft(e.target.value)}
               onBlur={() => handleBlur("name")}
               onKeyDown={(e) => handleKeyDown(e, "name")}
@@ -234,6 +235,28 @@ export function AssetInfoSection({ asset }: AssetInfoSectionProps) {
                 <div className="font-medium">Se opera en unidades</div>
                 <div className="mt-0.5 text-xs text-gray-500">
                   Habilita cantidad, precio promedio ponderado y registro de compras.
+                </div>
+              </div>
+            </label>
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                data-testid="generates-income-toggle"
+                type="checkbox"
+                checked={asset.generatesIncome}
+                onChange={(e) =>
+                  startTransition(async () => {
+                    await updateAsset(asset.id, { generatesIncome: e.target.checked })
+                    router.refresh()
+                  })
+                }
+                className="mt-0.5"
+              />
+              <div>
+                <div className="font-medium">Genera ingresos</div>
+                <div className="mt-0.5 text-xs text-gray-500">
+                  Es un negocio o una renta que produce ingreso (no acumulación de capital como
+                  préstamos a cobrar, ahorro o dinero en spot). Solo estos activos cuentan en la
+                  Libertad Financiera del dashboard.
                 </div>
               </div>
             </label>

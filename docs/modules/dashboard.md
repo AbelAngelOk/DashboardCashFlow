@@ -11,7 +11,7 @@ Estado: Activo
 
 Mostrar el estado financiero actual del usuario en tiempo real: Estado de Resultados (ingresos vs. gastos) y Balance (activos vs. pasivos). Permite crear, editar y eliminar registros financieros directamente desde la vista, y tomar snapshots del estado.
 
-**v2.6.0** (ver `docs/CHANGELOG.md` y `PRODUCT_REVIEW.md` §3.1 en la raíz): el panel Auditor suma **Libertad Financiera** (ingreso vinculado a un activo ÷ gasto total) y un aviso cuando las tasas de cambio están desactualizadas. **v2.5.1**: cada tabla (Ingresos/Gastos/Activos/Obligaciones) tiene su propio skeleton de carga y estado vacío — el shell ya no espera a la DB para pintarse.
+**v2.6.0** (ver `docs/CHANGELOG.md` y `docs/archive/PRODUCT_REVIEW.md` §3.1): el panel Auditor suma **Libertad Financiera** (ingreso vinculado a un activo ÷ gasto total) y un aviso cuando las tasas de cambio están desactualizadas. **v2.5.1**: cada tabla (Ingresos/Gastos/Activos/Obligaciones) tiene su propio skeleton de carga y estado vacío — el shell ya no espera a la DB para pintarse.
 
 **Ruta**: `/`
 **Componente principal**: `components/dashboard-sheet.tsx` (`DashboardSheet`)
@@ -40,7 +40,9 @@ Mostrar el estado financiero actual del usuario en tiempo real: Estado de Result
 
 ### 2. Balance
 - Sección **Activos**: registros tipo `"activo"` y `"GROUP"` con expansión de grupos
-- Sección **Pasivos**: registros tipo `"pasivo"` + filas extra de obligaciones
+- **Libertad Financiera**: ingresos de activos marcados "Genera ingresos" (detalle del activo) ÷ gasto total. Sin ningún activo marcado muestra cómo activarlo.
+- Sección **Obligaciones**: registros tipo `"pasivo"` + filas extra de obligaciones; las obligaciones agrupadas se muestran como una fila colapsable con el valor sumado
+- Las dos tablas tienen el mismo alto y la fila de total queda siempre al fondo
 
 ### 3. Grupos de flujos colapsables
 - Grupos de Gastos e Ingresos se renderizan primero, como cabeceras con chevron
@@ -55,6 +57,20 @@ Mostrar el estado financiero actual del usuario en tiempo real: Estado de Result
   - Depósito: opción de crear gasto asociado automáticamente
   - Extracción: opción de crear ingreso asociado automáticamente
 - Pasivos: edición directa
+
+### 4a. Menú de acciones (v2.9.0)
+Cada fila del dashboard tiene un único botón "⋯" (`RowActionsMenu`) con: **Confirmar** (Por revisar → Pendiente), **Pagar…/Cobrar…**, **Ver detalle**, **Editar**, **Marcador** (submenú) y **Eliminar** (o **Poner en cero** en hijos de un grupo de activos). Las opciones dependen del estado del registro. Crear marcadores nuevos se hace en Personalización.
+
+### 4b. Ingresos y gastos "Por revisar" (v2.8.0, ciclo ampliado en v2.9.0)
+- Ciclo: `Por revisar → Pendiente (Por cobrar) → Pagado (Cobrado)`. **Confirmar** (`validateReviewRecord`) valida sin pagar; **Pagar/Cobrar** acepta ambos estados de origen.
+- Lo que genera el corte (cuotas y pagos de obligaciones, cobros de reglas de ingreso, dividendos) entra con `status = "REVIEW"`: badge **Por revisar** + botón **Pagar** (gastos) o **Cobrar** (ingresos).
+- El botón abre un diálogo con el monto editable y llama a `confirmReviewRecord()` (`lib/review-actions.ts`), que según el origen paga la cuota/pago (`acceptInstallmentPayment` / `acceptObligationPayment`) o cobra (`collectIncomeOccurrence` / `collectDividend`) con el monto real. El registro pasa a `ACTIVE` y el asiento se genera ahí.
+- Editar el monto de un ingreso/gasto generado lo lleva a su origen (`syncGastoAmount` / `syncIngresoAmount`): si todavía no se pagó/cobró, cambia el esperado; si ya se pagó/cobró, corrige el pago y asienta la diferencia.
+- Un ingreso nuevo puede quedar suelto, vinculado a un activo existente o a un **activo nuevo** (opción "+ Activo nuevo…" en la columna Activo).
+
+### 4c. Nombres y descripciones (v2.8.0)
+- Nombres de activos, obligaciones, ingresos y gastos limitados a 30 caracteres (`NAME_MAX_LENGTH`) en todos los formularios y editores inline. Los nombres existentes más largos se muestran truncados con "…" y completos en el tooltip.
+- Descripción opcional (texto) en ingresos, gastos y obligaciones; en activos se muestra el texto plano del editor rico del detalle. En el dashboard aparece como ícono de info con tooltip junto al nombre.
 
 ### 5. Eliminación
 - **Ingresos/Gastos**: `deleteRecord()` → `status = "HISTORICAL"` (no se borra físicamente)

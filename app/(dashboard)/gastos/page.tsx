@@ -26,7 +26,8 @@ import { GastoFormDialog } from "@/components/gastos/gasto-form-dialog"
 import { EditOrVersionDialog } from "@/components/shared/edit-or-version-dialog"
 import { GastoIngresoLinksPanel } from "@/components/gastos/gasto-ingreso-links-panel"
 import { MarkerPicker } from "@/components/markers/marker-picker"
-import { formatAmount, type Currency } from "@/lib/finance"
+import { FlowProjectionPanel } from "@/components/charts/flow-charts"
+import { formatAmount, LIVE_FLOW_STATUSES, type Currency, type RecordStatus } from "@/lib/finance"
 import type { MarkerDefinition } from "@/lib/marker-types"
 import {
   Select,
@@ -151,7 +152,7 @@ export default function GastosPage() {
   const fetchGastos = useCallback(async (status: StatusFilter) => {
     setLoading(true)
     try {
-      const [data] = await Promise.all([loadGastos([status]), fetchGroups()])
+      const [data] = await Promise.all([loadGastos(status === "ACTIVE" ? ["ACTIVE", "REVIEW", "CONFIRMED"] : [status]), fetchGroups()])
       setGastos(data)
       refreshMarkers(data.map((g) => g.id))
     } catch (err) {
@@ -273,6 +274,8 @@ export default function GastosPage() {
           )}
         </div>
       </div>
+
+      <FlowProjectionPanel kind="expense" />
 
       {/* Status filter */}
       <div className="mb-4 flex gap-1">
@@ -453,7 +456,7 @@ export default function GastosPage() {
                 {rows.map((g) => {
                   const marker = markerMap[g.id] ?? null
                   return (
-                  <div key={g.id} className={g.status !== "ACTIVE" ? "opacity-60" : ""}>
+                  <div key={g.id} className={!LIVE_FLOW_STATUSES.includes(g.status as RecordStatus) ? "opacity-60" : ""}>
                     <div
                       className="flex border-b border-black text-sm"
                       style={marker ? {
@@ -501,7 +504,7 @@ export default function GastosPage() {
                           currentMarker={marker}
                           onChanged={() => refreshMarkers(gastos.map((x) => x.id))}
                         />
-                        {g.status === "ACTIVE" ? (
+                        {LIVE_FLOW_STATUSES.includes(g.status as RecordStatus) ? (
                           <>
                             <button
                               onClick={() => setEditingGasto(g)}

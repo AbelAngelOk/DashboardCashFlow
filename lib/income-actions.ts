@@ -348,7 +348,7 @@ export async function loadIncomeRules(recordId: string): Promise<IncomeStreamDat
   const ingresoIds = occurrences.map((o) => o.ingresoRecordId).filter((v): v is string => !!v)
   const activeIngresos = ingresoIds.length
     ? await prisma.record.findMany({
-        where: { id: { in: ingresoIds }, userId, status: "ACTIVE" },
+        where: { id: { in: ingresoIds }, userId, status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] } },
         select: { id: true },
       })
     : []
@@ -779,7 +779,7 @@ export async function rejectIncomeOccurrence(occurrenceId: string): Promise<void
 
   if (occ.ingresoRecordId) {
     await prisma.record.updateMany({
-      where: { id: occ.ingresoRecordId, userId, status: { in: ["PENDING", "ACTIVE"] } },
+      where: { id: occ.ingresoRecordId, userId, status: { in: ["PENDING", "REVIEW", "CONFIRMED", "ACTIVE"] } },
       data: { status: "CANCELLED" },
     })
   }
@@ -790,6 +790,73 @@ export async function rejectIncomeOccurrence(occurrenceId: string): Promise<void
   })
 
   await completeIfExhausted(occ.ruleId, userId)
+  await recalcularIncomeStream(occ.recordId, userId)
+}
+
+/**
+ * El monto de un ingreso generado por una regla se editó en el dashboard.
+ * Sin cobrar: pasa a ser el esperado de la ocurrencia. Ya cobrado: se corrige el
+ * cobro con la misma lógica contable que `collectIncomeOccurrence()`, por la diferencia.
+ */
+export async function syncIngresoAmount(ingresoId: string, newAmount: number): Promise<void> {
+  const userId = await getUserId()
+
+  const occ = await prisma.incomeOccurrence.findFirst({
+    where: { ingresoRecordId: ingresoId, userId },
+    include: { rule: true, record: { select: { id: true, name: true, amount: true, parentId: true } } },
+  })
+  if (!occ) return
+
+  if (occ.status === "PENDING") {
+    await prisma.incomeOccurrence.update({ where: { id: occ.id }, data: { expectedAmount: newAmount } })
+    await recalcularIncomeStream(occ.recordId, userId)
+    return
+  }
+  if (occ.status !== "COLLECTED") return
+
+  const delta = newAmount - toNumber(occ.actualAmount)
+  if (Math.abs(delta) < 0.0001) return
+
+  const currency = occ.currency as Currency
+  const ruleName = formatOccurrenceName(occ.rule.name, occ.installmentNumber, occ.rule.installmentCount)
+  const inKind = occ.rule.settlement === "IN_KIND"
+
+  await prisma.incomeOccurrence.update({ where: { id: occ.id }, data: { actualAmount: newAmount } })
+
+  if (occ.rule.reducesPrincipal || inKind) {
+    const current = toNumber(occ.record.amount)
+    // Capital: cobrar más baja el activo; en especie: cobrar más lo sube
+    const next = Math.max(0, occ.rule.reducesPrincipal ? current - delta : current + delta)
+    await prisma.record.update({ where: { id: occ.recordId, userId }, data: { amount: next } })
+    await prisma.financialMovement.create({
+      data: {
+        id: crypto.randomUUID(),
+        userId,
+        recordId: occ.recordId,
+        movementType: "ADJUSTMENT",
+        amount: Math.abs(next - current),
+        currency,
+        operationDate: new Date(),
+        description: `Ajuste de cobro de ${ruleName} (monto editado)`,
+        metadata: { relatedIngresoId: ingresoId } as object,
+      },
+    })
+    if (occ.record.parentId) await recalcularGrupo(occ.record.parentId, userId)
+  }
+
+  const debit = inKind && !occ.rule.reducesPrincipal ? "activos" : "efectivo"
+  const credit = occ.rule.reducesPrincipal ? "activos" : "ingresos"
+  await createJournalEntry(userId, {
+    description: `Ajuste de cobro: ${ruleName} — ${occ.record.name}`,
+    currency,
+    amount: Math.abs(delta),
+    debitAccount: delta > 0 ? debit : credit,
+    creditAccount: delta > 0 ? credit : debit,
+    sourceEntityId: occ.recordId,
+    targetEntityId: ingresoId,
+    reference: occ.id,
+  })
+
   await recalcularIncomeStream(occ.recordId, userId)
 }
 

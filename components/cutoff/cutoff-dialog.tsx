@@ -13,7 +13,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { toast } from "@/components/ui/use-toast"
 import { executeCutoff, getCutoffPreview } from "@/lib/cutoff-actions"
-import type { CutoffPreview, CutoffResult, CutoffStatus } from "@/lib/cutoff"
+import { periodRangeShort, type CutoffPreview, type CutoffResult, type CutoffStatus } from "@/lib/cutoff"
 
 interface CutoffDialogProps {
   open: boolean
@@ -88,9 +88,10 @@ export function CutoffDialog({
   const [running, setRunning] = useState(false)
 
   // El snapshot pre-corte ya no es opcional: es la única forma de deshacer
-  // un corte confirmado por error (ver PRODUCT_REVIEW.md §3.5 y §5.7).
+  // un corte confirmado por error (ver docs/archive/PRODUCT_REVIEW.md §3.5 y §5.7).
   const takeSnapshot = true
   const [keepMarked, setKeepMarked] = useState(false)
+  const [keepUnconfirmed, setKeepUnconfirmed] = useState(true)
   const [clearEntityMarkers, setClearEntityMarkers] = useState(false)
 
   useEffect(() => {
@@ -107,11 +108,12 @@ export function CutoffDialog({
   const handleConfirm = async () => {
     setRunning(true)
     try {
-      const result = await executeCutoff({ takeSnapshot, keepMarked, clearEntityMarkers })
+      const result = await executeCutoff({ takeSnapshot, keepMarked, keepUnconfirmed, clearEntityMarkers })
       toast({
         title: `Corte de ${status.pendingPeriodLabel} realizado`,
         description:
           `${result.ingresosArchived} ingresos y ${result.gastosArchived} gastos a histórico. ` +
+          (result.unconfirmedKept > 0 ? `${result.unconfirmedKept} sin pagar ni cobrar siguen en el dashboard. ` : "") +
           `${result.gastosGenerated} gastos y ${result.ingresosGenerated} ingresos generados para ${status.incomingPeriodLabel}.`,
       })
       onOpenChange(false)
@@ -132,9 +134,16 @@ export function CutoffDialog({
     onOpenChange(false)
   }
 
-  const archiveTotal = preview
-    ? preview.ingresosToArchive + preview.gastosToArchive - (keepMarked ? preview.markedToArchive : 0)
+  const unconfirmedArchived = preview && !keepUnconfirmed
+    ? preview.unconfirmed - (keepMarked ? preview.unconfirmedMarked : 0)
     : 0
+  const archiveTotal = preview
+    ? preview.ingresosToArchive + preview.gastosToArchive - (keepMarked ? preview.markedToArchive : 0) +
+      unconfirmedArchived
+    : 0
+
+  const pendingRange = periodRangeShort(status.pendingPeriod, status.cutoffDay)
+  const incomingRange = periodRangeShort(status.incomingPeriod, status.cutoffDay)
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!running) onOpenChange(v) }}>
@@ -143,6 +152,7 @@ export function CutoffDialog({
           <DialogTitle className="flex items-center gap-2">
             <Scissors className="h-4 w-4" />
             Corte de mes — {status.pendingPeriodLabel}
+            <span className="text-xs font-normal text-gray-400">({pendingRange})</span>
           </DialogTitle>
           <DialogDescription>
             Los ingresos y gastos activos pasan a histórico, y se preparan los de{" "}
@@ -179,10 +189,16 @@ export function CutoffDialog({
             </div>
           ) : preview ? (
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide">
-                <span>{status.pendingPeriodLabel}</span>
-                <ArrowRight className="h-3 w-3" />
-                <span>{status.incomingPeriodLabel}</span>
+              <div className="flex items-start gap-2 text-xs">
+                <div>
+                  <div className="font-bold uppercase tracking-wide">{status.pendingPeriodLabel}</div>
+                  <div className="text-[11px] text-gray-400">{pendingRange}</div>
+                </div>
+                <ArrowRight className="mt-0.5 h-3 w-3" />
+                <div>
+                  <div className="font-bold uppercase tracking-wide">{status.incomingPeriodLabel}</div>
+                  <div className="text-[11px] text-gray-400">{incomingRange}</div>
+                </div>
               </div>
               <div className="flex flex-col gap-1">
                 <PreviewRow label="Ingresos a histórico" value={preview.ingresosToArchive} />
@@ -193,9 +209,15 @@ export function CutoffDialog({
                     value={preview.markedToArchive}
                   />
                 )}
+                {preview.unconfirmed > 0 && (
+                  <PreviewRow
+                    label={keepUnconfirmed ? "Sin pagar/cobrar (pasan al período nuevo)" : "Sin pagar/cobrar (se archivan)"}
+                    value={preview.unconfirmed}
+                  />
+                )}
                 <div className="my-1 border-t border-gray-300" />
                 <PreviewRow label="Gastos de obligaciones a generar" value={preview.gastosToGenerate} />
-                <PreviewRow label="Ingresos de dividendos a generar" value={preview.ingresosToGenerate} />
+                <PreviewRow label="Ingresos de activos a generar (reglas y dividendos)" value={preview.ingresosToGenerate} />
                 {clearEntityMarkers && (
                   <PreviewRow
                     label="Etiquetas a quitar"
@@ -221,6 +243,14 @@ export function CutoffDialog({
             checked={takeSnapshot}
             onCheckedChange={() => {}}
             disabled
+          />
+          <SwitchRow
+            id="cutoff-switch-keep-unconfirmed"
+            label="Mantener lo que sigue sin pagar ni cobrar"
+            description="Lo que está “Por revisar” o “Pendiente” (cuotas sin pagar, ingresos sin cobrar) pasa al período nuevo en vez de archivarse, para que no se pierda de vista. Lo ya pagado o cobrado se archiva igual."
+            checked={keepUnconfirmed}
+            onCheckedChange={setKeepUnconfirmed}
+            disabled={running}
           />
           <SwitchRow
             id="cutoff-switch-keep-marked"

@@ -11,7 +11,7 @@ Estado: Activo
 
 Cerrar un período mensual en una sola operación confirmada por el usuario: archivar los ingresos y gastos del mes que sale, y dejar preparados los del mes entrante a partir de las obligaciones y los activos que tienen flujos configurados.
 
-**v2.6.0** (ver `docs/CHANGELOG.md` y `CORTE_Y_SNAPSHOTS.md` en la raíz): el snapshot pre-corte pasó de opcional a obligatorio — es la única forma de deshacer un corte confirmado por error. Nuevo campo `CutoffStatus.periodsOverdue` avisa (badge + banner en el diálogo) cuando quedaron períodos sin cortar en el medio, porque el corte no filtra por fecha y esos meses se mezclan sin poder separarse después.
+**v2.6.0** (ver `docs/CHANGELOG.md` y `docs/archive/CORTE_Y_SNAPSHOTS.md`): el snapshot pre-corte pasó de opcional a obligatorio — es la única forma de deshacer un corte confirmado por error. Nuevo campo `CutoffStatus.periodsOverdue` avisa (badge + banner en el diálogo) cuando quedaron períodos sin cortar en el medio, porque el corte no filtra por fecha y esos meses se mezclan sin poder separarse después.
 
 **Punto de entrada**: Dashboard (`/`) — pop-up automático + botón manual
 **Configuración**: `/configuracion` → sección "Corte Mensual"
@@ -92,16 +92,20 @@ disponible = NO existe MonthlyCutoff para (usuario, periodoPendiente)
 - El diálogo consulta `getCutoffPreview()` y muestra, antes de confirmar:
   - Ingresos y gastos que pasarán a histórico
   - Cuántos de ellos tienen etiqueta (los que el primer switch conservaría)
-  - Gastos de obligaciones que se activarán
-  - Ingresos de dividendos que se crearán
+  - Cuántos siguen "Por revisar" (y si cruzan o se archivan, según el switch)
+  - Gastos de obligaciones que entran al período
+  - Ingresos de activos (reglas de ingreso y dividendos) que entran al período
   - Etiquetas de activos y obligaciones que se quitarían
 
-### 5. Los tres switches
+El título y la vista previa muestran el rango de fechas de cada período (`periodRangeShort()`, ej. "1 sept – 30 sept"); el botón del dashboard tiene un ícono de info con los dos rangos.
+
+### 5. Los switches
 
 | Switch | Default | Efecto |
 |---|---|---|
-| **Guardar snapshot del mes que sale** | ✅ On | Toma un snapshot del dashboard *antes* de archivar, nombrado `Cierre {mes} {año}` |
-| **Mantener los ingresos y gastos con etiqueta** | ⬜ Off | Los registros con marcador asignado quedan `ACTIVE` y cruzan el corte |
+| **Snapshot de seguridad** | ✅ On (bloqueado) | Toma un snapshot del dashboard *antes* de archivar, nombrado `Cierre {mes} {año}`. No guarda los padres de grupos de activos (sus hijos ya están). |
+| **Mantener lo que sigue sin pagar ni cobrar** | ✅ On | Los ingresos/gastos `REVIEW` y `CONFIRMED` (cuota sin pagar, cobro pendiente) cruzan al período nuevo en vez de archivarse |
+| **Mantener los ingresos y gastos con etiqueta** | ⬜ Off | Los registros con marcador asignado cruzan el corte |
 | **Quitar las etiquetas a activos y obligaciones** | ⬜ Off | Elimina las asignaciones de marcador de activos y obligaciones (los marcadores en sí no se borran) |
 
 **Razón de ser de los dos últimos**: los ingresos y gastos son efímeros — una etiqueta como *"revisar"* sobre ellos significa "esto todavía no está resuelto", así que conviene que sobrevivan al corte. Los activos y las obligaciones son permanentes — una etiqueta como *"actualizado"* es un estado de este mes que conviene limpiar al empezar el siguiente.
@@ -113,8 +117,9 @@ Pasos en orden. Cada paso reporta un contador que queda guardado en `MonthlyCuto
 ```
 1. Revalidar elegibilidad en servidor         (nunca se confía en el cliente)
 2. Snapshot del estado actual                 (si el switch está activo)
-3. Archivar ingresos y gastos ACTIVE  → HISTORICAL
-     └─ excluye los que tienen etiqueta si el switch está activo
+3. Archivar ingresos y gastos ACTIVE/REVIEW → HISTORICAL
+     ├─ excluye los REVIEW si "mantener sin confirmar" está activo
+     └─ excluye los que tienen etiqueta si ese switch está activo
 4. Activar gastos de obligaciones del período entrante
 5. Ingresos del período entrante:
      ├─ extender las series de dividendos recurrentes
@@ -133,12 +138,13 @@ Para cada obligación en estado `ACTIVE` (las pausadas, completadas y canceladas
 
 | Origen | Condición | Acción |
 |---|---|---|
-| `ObligationPayment` | `status = PENDING` y `expectedDate` dentro del período entrante | Su gasto pasa a `ACTIVE` y se le quita el prefijo `[Programado] ` |
+| `ObligationPayment` | `status = PENDING` y `expectedDate` dentro del período entrante | Su gasto pasa a `REVIEW` ("Por revisar") y se le quita el prefijo `[Programado] ` |
 | `ObligationInstallment` | `status ∈ {PENDING, OVERDUE}` y `dueDate` dentro del período entrante | Ídem |
 
-- Si el pago o la cuota **no tiene gasto asociado** (datos legados), el corte lo crea `ACTIVE` y lo vincula.
-- **El pago/cuota sigue `PENDING`**: aceptarlo o rechazarlo desde `/obligaciones` sigue siendo un acto explícito del usuario. Aceptar lo marca `PAID`; rechazar deja el gasto en `CANCELLED`.
-- Cada activación genera su asiento contable `gastos / efectivo`.
+- Si el pago o la cuota **no tiene gasto asociado** (datos legados), el corte lo crea `REVIEW` y lo vincula.
+- **El pago/cuota sigue `PENDING`**: pagarlo (botón **Pagar** en el dashboard, con el monto real editable, o "aceptar" desde `/obligaciones`) lo marca `PAID` y deja el gasto `ACTIVE`; rechazarlo deja el gasto `CANCELLED`.
+- **El corte no asienta nada**: el asiento `gastos / efectivo` se genera al pagar, por el monto pagado. (Hasta v2.7.0 el corte asentaba el esperado y pagar volvía a asentar: el gasto quedaba duplicado en el libro contable.)
+- Los ingresos de reglas de ingreso y los dividendos del período también entran como `REVIEW`; **Cobrar** en el dashboard llama a `collectIncomeOccurrence()` / `collectDividend()` con el monto real (`lib/review-actions.ts` → `confirmReviewRecord()` elige el origen).
 
 ### 8. Ingresos de dividendos del mes entrante
 

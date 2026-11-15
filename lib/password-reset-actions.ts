@@ -17,7 +17,7 @@ function hashToken(token: string): string {
  * el email — no hay forma de que alguien de afuera confirme qué emails están
  * registrados.
  *
- * LIMITACIÓN HONESTA (ver PRODUCT_REVIEW.md §3.4 y §6): no hay proveedor de
+ * LIMITACIÓN HONESTA (ver docs/archive/PRODUCT_REVIEW.md §3.4 y §6): no hay proveedor de
  * email configurado todavía. El link de reset se loguea en la consola del
  * servidor en vez de mandarse por mail — funciona hoy porque quien necesita
  * recuperar acceso puede pedirle el link a quien tenga acceso a esos logs

@@ -286,17 +286,19 @@ export async function getCutoffPreview(): Promise<CutoffPreview> {
   const period = pendingCutoffPeriod(today, cutoffDay)
   const incomingPeriod = currentOpenPeriod(today, cutoffDay)
 
-  const flowRecords = await prisma.record.findMany({
+  const allFlow = await prisma.record.findMany({
     where: {
       userId,
       type: { in: ["ingreso", "gasto"] },
-      status: "ACTIVE",
+      status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] },
       deletedAt: null,
     },
-    select: { id: true, type: true },
+    select: { id: true, type: true, status: true },
   })
+  const flowRecords = allFlow.filter((r) => r.status === "ACTIVE")
+  const unconfirmedRecords = allFlow.filter((r) => r.status === "REVIEW" || r.status === "CONFIRMED")
 
-  const flowIds = flowRecords.map((r) => r.id)
+  const flowIds = allFlow.map((r) => r.id)
   const markedFlowIds =
     flowIds.length > 0
       ? await prisma.entityMarker.findMany({
@@ -304,7 +306,8 @@ export async function getCutoffPreview(): Promise<CutoffPreview> {
           select: { entityId: true },
         })
       : []
-  const markedSet = new Set(markedFlowIds.map((m) => m.entityId))
+  const allMarked = new Set(markedFlowIds.map((m) => m.entityId))
+  const markedSet = new Set(flowRecords.filter((r) => allMarked.has(r.id)).map((r) => r.id))
 
   const { payments, installments } = await collectObligationDues(userId, incomingPeriod, cutoffDay)
   // persist=false: la vista previa no debe escribir nada
@@ -332,6 +335,8 @@ export async function getCutoffPreview(): Promise<CutoffPreview> {
     ingresosToArchive: flowRecords.filter((r) => r.type === "ingreso").length,
     gastosToArchive: flowRecords.filter((r) => r.type === "gasto").length,
     markedToArchive: markedSet.size,
+    unconfirmed: unconfirmedRecords.length,
+    unconfirmedMarked: unconfirmedRecords.filter((r) => allMarked.has(r.id)).length,
     gastosToGenerate: payments.length + installments.length,
     ingresosToGenerate:
       dividendGroups.reduce((s, g) => s + g.entries.length, 0) + incomeDues.length,
@@ -365,18 +370,24 @@ export async function executeCutoff(options: CutoffOptions): Promise<CutoffResul
     snapshotId = await createCutoffSnapshot(userId, period, cutoffDay)
   }
 
-  // ── 2. Archivar ingresos y gastos activos ──────────────────────────────────
+  // ── 2. Archivar ingresos y gastos del período ──────────────────────────────
+  //    Los ya pagados/cobrados (ACTIVE) se archivan; los pendientes (REVIEW/CONFIRMED) cruzan
+  //    el corte si el usuario lo pidió — una cuota impaga no debe desaparecer.
   const flowRecords = await prisma.record.findMany({
     where: {
       userId,
       type: { in: ["ingreso", "gasto"] },
-      status: "ACTIVE",
+      status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] },
       deletedAt: null,
     },
-    select: { id: true, type: true },
+    select: { id: true, type: true, status: true },
   })
 
-  let keptIds = new Set<string>()
+  const keptIds = new Set<string>()
+  if (options.keepUnconfirmed) {
+    for (const r of flowRecords) if (r.status === "REVIEW" || r.status === "CONFIRMED") keptIds.add(r.id)
+  }
+  const unconfirmedKept = keptIds.size
   if (options.keepMarked && flowRecords.length > 0) {
     const marked = await prisma.entityMarker.findMany({
       where: {
@@ -386,7 +397,7 @@ export async function executeCutoff(options: CutoffOptions): Promise<CutoffResul
       },
       select: { entityId: true },
     })
-    keptIds = new Set(marked.map((m) => m.entityId))
+    for (const m of marked) keptIds.add(m.entityId)
   }
 
   const toArchive = flowRecords.filter((r) => !keptIds.has(r.id))
@@ -458,7 +469,8 @@ export async function executeCutoff(options: CutoffOptions): Promise<CutoffResul
       detail:
         `Corte de ${periodLabel(period)}: ` +
         `${ingresosArchived} ingresos y ${gastosArchived} gastos a histórico` +
-        (keptIds.size > 0 ? `, ${keptIds.size} conservados por etiqueta` : "") +
+        (unconfirmedKept > 0 ? `, ${unconfirmedKept} sin pagar ni cobrar pasan al período nuevo` : "") +
+        (keptIds.size > unconfirmedKept ? `, ${keptIds.size - unconfirmedKept} conservados por etiqueta` : "") +
         `; ${gastosGenerated} gastos y ${ingresosGenerated} ingresos generados para ${periodLabel(incomingPeriod)}` +
         (markersCleared > 0 ? `; ${markersCleared} etiquetas quitadas` : ""),
       userId,
@@ -471,6 +483,7 @@ export async function executeCutoff(options: CutoffOptions): Promise<CutoffResul
     ingresosArchived,
     gastosArchived,
     recordsKept: keptIds.size,
+    unconfirmedKept,
     gastosGenerated,
     ingresosGenerated,
     markersCleared,
@@ -489,10 +502,12 @@ async function createCutoffSnapshot(
     where: {
       userId,
       deletedAt: null,
+      // El padre de un grupo vale la suma de sus hijos: guardarlo contaría dos veces
+      NOT: { type: "activo", children: { some: {} } },
       OR: [
         { type: { not: { in: ["gasto", "ingreso"] } } },
-        { type: "gasto", status: "ACTIVE" },
-        { type: "ingreso", status: "ACTIVE" },
+        { type: "gasto", status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] } },
+        { type: "ingreso", status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] } },
       ],
     },
     select: { id: true, type: true, name: true, amount: true, currency: true, linkedTo: true },
@@ -542,9 +557,18 @@ async function activateObligationGastos(
   const { payments, installments } = await collectObligationDues(userId, incomingPeriod, cutoffDay)
   let generated = 0
 
+  // Pagos semanales: varios del mismo período llevan la fecha para distinguirse
+  const paymentsPerObligation = new Map<string, number>()
+  for (const pay of payments) {
+    paymentsPerObligation.set(pay.obligationId, (paymentsPerObligation.get(pay.obligationId) ?? 0) + 1)
+  }
+
   for (const payment of payments) {
     const amount = payment.expectedAmount != null ? toNumber(payment.expectedAmount) : 0
-    const name = payment.obligation.name
+    const repeated = (paymentsPerObligation.get(payment.obligationId) ?? 0) > 1 && payment.expectedDate
+    const name = repeated
+      ? `${payment.obligation.name} (${payment.expectedDate!.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit", timeZone: "UTC" })})`
+      : payment.obligation.name
     const currency = payment.currency
     let gastoId = payment.gastoRecordId
 
@@ -552,7 +576,7 @@ async function activateObligationGastos(
       // Solo si sigue PENDING — si el usuario ya lo aceptó o rechazó, no se toca
       const updated = await prisma.record.updateMany({
         where: { id: gastoId, userId, status: "PENDING" },
-        data: { name, status: "ACTIVE" },
+        data: { name, status: "REVIEW" },
       })
       if (updated.count === 0) continue
     } else {
@@ -565,7 +589,7 @@ async function activateObligationGastos(
           amount,
           currency,
           userId,
-          status: "ACTIVE",
+          status: "REVIEW",
           operationDate: payment.expectedDate ?? new Date(),
         },
       })
@@ -575,18 +599,9 @@ async function activateObligationGastos(
       })
     }
 
+    // Sin asiento: el gasto se asienta al pagarlo, por el monto real
+    // (acceptInstallmentPayment / acceptObligationPayment). Asentarlo acá lo duplicaba.
     generated++
-    if (amount > 0) {
-      await createJournalEntry(userId, {
-        description: `Corte de mes — gasto de obligación: ${name}`,
-        currency,
-        amount,
-        debitAccount: "gastos",
-        creditAccount: "efectivo",
-        sourceEntityId: gastoId,
-        reference: payment.id,
-      })
-    }
   }
 
   for (const inst of installments) {
@@ -598,7 +613,7 @@ async function activateObligationGastos(
     if (gastoId) {
       const updated = await prisma.record.updateMany({
         where: { id: gastoId, userId, status: "PENDING" },
-        data: { status: "ACTIVE" },
+        data: { status: "REVIEW" },
       })
       if (updated.count === 0) continue
     } else {
@@ -611,7 +626,7 @@ async function activateObligationGastos(
           amount,
           currency,
           userId,
-          status: "ACTIVE",
+          status: "REVIEW",
           operationDate: inst.dueDate,
         },
       })
@@ -621,18 +636,9 @@ async function activateObligationGastos(
       })
     }
 
+    // Sin asiento: el gasto se asienta al pagarlo, por el monto real
+    // (acceptInstallmentPayment / acceptObligationPayment). Asentarlo acá lo duplicaba.
     generated++
-    if (amount > 0) {
-      await createJournalEntry(userId, {
-        description: `Corte de mes — cuota de obligación: ${name}`,
-        currency,
-        amount,
-        debitAccount: "gastos",
-        creditAccount: "efectivo",
-        sourceEntityId: gastoId,
-        reference: inst.id,
-      })
-    }
   }
 
   return generated
@@ -663,7 +669,7 @@ async function generateDividendIngresos(
           amount: entry.estimatedGain,
           currency: group.currency,
           userId,
-          status: "ACTIVE",
+          status: "REVIEW",
           linkedTo: group.assetId,
           operationDate: new Date(),
         },
@@ -723,7 +729,7 @@ async function activateIncomeOccurrences(
     const name = formatOccurrenceName(occ.rule.name, occ.installmentNumber, occ.rule.installmentCount)
     const updated = await prisma.record.updateMany({
       where: { id: occ.ingresoRecordId, userId, status: "PENDING" },
-      data: { name, status: "ACTIVE" },
+      data: { name, status: "REVIEW" },
     })
     if (updated.count > 0) generated++
   }

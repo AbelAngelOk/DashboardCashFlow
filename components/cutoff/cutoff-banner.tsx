@@ -3,9 +3,10 @@
 import { useCallback, useEffect, useState } from "react"
 import { Scissors } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { InfoTip } from "@/components/ui/info-tip"
 import { CutoffDialog } from "./cutoff-dialog"
 import { getCutoffStatus } from "@/lib/cutoff-actions"
-import type { CutoffResult, CutoffStatus } from "@/lib/cutoff"
+import { periodRangeShort, type CutoffResult, type CutoffStatus } from "@/lib/cutoff"
 
 const DISMISS_KEY = "cashflow:cutoff-dismissed"
 
@@ -72,7 +73,11 @@ export function CutoffBanner({ onDone }: CutoffBannerProps) {
   if (!status || !status.available) return null
 
   return (
-    <>
+    <div className="flex items-center gap-1.5">
+      <InfoTip label="Fechas de los períodos">
+        {`Cierra ${status.pendingPeriodLabel}: ${periodRangeShort(status.pendingPeriod, status.cutoffDay)}\n` +
+          `Abre ${status.incomingPeriodLabel}: ${periodRangeShort(status.incomingPeriod, status.cutoffDay)}`}
+      </InfoTip>
       <Button
         data-testid="cutoff-button"
         size="sm"
@@ -106,6 +111,6 @@ export function CutoffBanner({ onDone }: CutoffBannerProps) {
         onDone={handleDone}
         onDismiss={handleDismiss}
       />
-    </>
+    </div>
   )
 }

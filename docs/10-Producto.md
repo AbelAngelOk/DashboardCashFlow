@@ -243,7 +243,7 @@ Se combinan libremente: una crypto en staking lleva *unidades* + *ingresos*; un 
 
 **Presets al crear**: el formulario ofrece cuatro puntos de partida —Inversión en unidades, Renta o sueldo, Préstamo o cobro en cuotas, Activo simple— que solo precargan capacidades. No quedan grabados: todo se cambia después desde el detalle.
 
-> **Por qué el cambio**: los once tipos nunca fueron categorías irreducibles. El análisis en [analisis/Clasificacion-Tipos-de-Activo.md](analisis/Clasificacion-Tipos-de-Activo.md) mostró que descomponían en cuatro atributos ortogonales, y que el sistema implementaba la misma recurrencia tres veces por no reconocerlo.
+> **Por qué el cambio**: los once tipos nunca fueron categorías irreducibles. El análisis en [analisis/Clasificacion-Tipos-de-Activo.md](archive/analisis/Clasificacion-Tipos-de-Activo.md) mostró que descomponían en cuatro atributos ortogonales, y que el sistema implementaba la misma recurrencia tres veces por no reconocerlo.
 
 #### Obligación — tres modelos de compromiso
 

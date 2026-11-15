@@ -97,7 +97,7 @@ export async function loadIngresoOptions(): Promise<
 > {
   const userId = await getUserId()
   const ingresos = await prisma.record.findMany({
-    where: { userId, type: "ingreso", status: "ACTIVE", deletedAt: null },
+    where: { userId, type: "ingreso", status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] }, deletedAt: null },
     select: { id: true, name: true, amount: true, currency: true },
     orderBy: { operationDate: "desc" },
   })
@@ -115,7 +115,7 @@ export async function loadGastoOptions(): Promise<
 > {
   const userId = await getUserId()
   const gastos = await prisma.record.findMany({
-    where: { userId, type: "gasto", status: "ACTIVE", deletedAt: null },
+    where: { userId, type: "gasto", status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] }, deletedAt: null },
     select: { id: true, name: true, amount: true, currency: true },
     orderBy: { operationDate: "desc" },
   })

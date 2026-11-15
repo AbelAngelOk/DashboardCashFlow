@@ -176,7 +176,8 @@ export function FinanceProvider({ children }: { children: ReactNode }) {
       name: name.trim(),
       period: period.trim() || currentPeriod(),
       createdAt: now(),
-      records: records.map((r) => ({ ...r })),
+      // El padre de un grupo vale la suma de sus hijos: guardarlo contaría dos veces
+      records: records.filter((r) => !r.isGroupParent).map((r) => ({ ...r })),
     }
     setSnapshots((prev) => [snapshot, ...prev])
     fire(dbTakeSnapshot(snapshot))

@@ -57,6 +57,7 @@ export async function createAsset(data: {
   amount: number
   currency: Currency
   tracksQuantity?: boolean
+  generatesIncome?: boolean
   currentQty?: number
   avgBuyPrice?: number
   description?: string
@@ -81,6 +82,7 @@ export async function createAsset(data: {
       currency: data.currency,
       assetType: data.assetType ?? null,
       tracksQuantity: data.tracksQuantity ?? false,
+      generatesIncome: data.generatesIncome ?? false,
       ticker: data.ticker ?? null,
       currentQty: data.currentQty ?? null,
       avgBuyPrice: data.avgBuyPrice ?? null,
@@ -130,6 +132,7 @@ export async function updateAsset(
     ticker?: string
     assetType?: AssetType | null
     tracksQuantity?: boolean
+    generatesIncome?: boolean
     currentQty?: number
     avgBuyPrice?: number
     description?: string
@@ -153,6 +156,7 @@ export async function updateAsset(
       ...(data.ticker !== undefined && { ticker: data.ticker }),
       ...(data.assetType !== undefined && { assetType: data.assetType }),
       ...(data.tracksQuantity !== undefined && { tracksQuantity: data.tracksQuantity }),
+      ...(data.generatesIncome !== undefined && { generatesIncome: data.generatesIncome }),
       ...(data.currentQty !== undefined && { currentQty: data.currentQty }),
       ...(data.avgBuyPrice !== undefined && { avgBuyPrice: data.avgBuyPrice }),
       ...(data.description !== undefined && { description: data.description }),
@@ -829,6 +833,7 @@ type DbRecord = {
   name: string
   assetType: string | null
   tracksQuantity?: boolean
+  generatesIncome?: boolean
   ticker: string | null
   amount: { toNumber: () => number } | number
   currency: string
@@ -883,6 +888,7 @@ function mapToAsset(r: DbRecord): Asset {
     name: r.name,
     assetType: r.assetType ?? "",
     tracksQuantity: r.tracksQuantity ?? false,
+    generatesIncome: r.generatesIncome ?? false,
     ticker: r.ticker ?? undefined,
     amount: toNum(r.amount) ?? 0,
     currency: r.currency as Currency,

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { ArrowLeft, Plus, Trash2, Pencil, Check, X } from "lucide-react"
@@ -23,15 +23,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { currencies, formatAmount } from "@/lib/finance"
+import { currencies, formatAmount, NAME_MAX_LENGTH } from "@/lib/finance"
 import type { Currency } from "@/lib/finance"
 import {
   type Obligation,
   type PaymentType,
-  type RecurrenceType,
+  type ObligationRecurrence,
   OBLIGATION_TYPE_LABELS,
   OBLIGATION_STATUS_LABELS,
-  RECURRENCE_TYPE_LABELS,
+  OBLIGATION_RECURRENCE_LABELS,
   PAYMENT_TYPE_LABELS,
   INSTALLMENT_STATUS_LABELS,
   computeRecurringBreakdown,
@@ -46,6 +46,8 @@ import {
   resumeObligationRule,
   updateObligationStatus,
   updateObligationInfo,
+  updateObligationRuleStartDate,
+  updateInstallmentsFirstDueDate,
   finalizeObligation,
   registerManualPayment,
   acceptInstallmentPayment,
@@ -333,12 +335,102 @@ function PaymentsBoard({
   )
 }
 
+// ── Edit start date dialog ────────────────────────────────────────────────────
+
+interface StartDateTarget {
+  kind: "installments" | "rule"
+  ruleId?: string
+  title: string
+  initial: string
+}
+
+function StartDateDialog({
+  target,
+  obligationId,
+  onClose,
+  onDone,
+}: {
+  target: StartDateTarget | null
+  obligationId: string
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [date, setDate] = useState("")
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState("")
+
+  useEffect(() => {
+    if (target) { setDate(target.initial); setError("") }
+  }, [target])
+
+  if (!target) return null
+
+  const save = async () => {
+    if (!date) return
+    setSaving(true)
+    setError("")
+    try {
+      if (target.kind === "rule") await updateObligationRuleStartDate(target.ruleId!, obligationId, date)
+      else await updateInstallmentsFirstDueDate(obligationId, date)
+      onDone()
+      onClose()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "No se pudo guardar la fecha")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v && !saving) onClose() }}>
+      <DialogContent data-testid="start-date-dialog" className="max-w-sm rounded-none border-2 border-black p-0">
+        <DialogHeader className="border-b-2 border-black bg-black px-4 py-3">
+          <DialogTitle className="font-bold italic text-white">{target.title}</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col gap-3 px-4 py-4">
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs font-bold uppercase">
+              {target.kind === "rule" ? "Fecha de inicio" : "Vencimiento de la primera cuota"}
+            </Label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              className="rounded-none border-2 border-black focus-visible:ring-0"
+            />
+          </div>
+          <p className="text-xs text-gray-500">
+            {target.kind === "rule"
+              ? "Los pagos futuros se recalculan con la fecha nueva. Los que ya entraron al dashboard con un corte, o ya se pagaron, no se tocan."
+              : "Las cuotas que todavía no entraron al dashboard se re-fechan en orden, una por mes. Las ya pagadas o traídas por un corte conservan su fecha."}
+          </p>
+          {error && <p className="text-xs text-rose-700">{error}</p>}
+        </div>
+        <DialogFooter className="border-t-2 border-black px-4 py-3">
+          <Button variant="outline" onClick={onClose} disabled={saving} className="border-2 border-black">Cancelar</Button>
+          <Button onClick={save} disabled={!date || saving} className="bg-black text-white hover:bg-gray-800">
+            {saving ? "Guardando..." : "Guardar y recalcular"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // ── Rules board (RECURRING) ───────────────────────────────────────────────────
 
-function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload: () => void }) {
+function RulesBoard({
+  obligation,
+  onReload,
+  onEditDate,
+}: {
+  obligation: Obligation
+  onReload: () => void
+  onEditDate: (rule: Obligation["rules"][number]) => void
+}) {
   const [addOpen, setAddOpen] = useState(false)
   const [name, setName] = useState("")
-  const [recurrenceType, setRecurrenceType] = useState<RecurrenceType>("MONTHLY")
+  const [recurrenceType, setRecurrenceType] = useState<ObligationRecurrence>("MONTHLY")
   const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10))
   const [amount, setAmount] = useState("")
   const [currency, setCurrency] = useState<Currency>("ARS")
@@ -404,7 +496,7 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
               {rule.name}
             </span>
             <span className="ml-2 text-xs text-gray-400">
-              {RECURRENCE_TYPE_LABELS[rule.recurrenceType]} · desde {formatObligationDate(rule.startDate)}
+              {OBLIGATION_RECURRENCE_LABELS[rule.recurrenceType]} · desde {formatObligationDate(rule.startDate)}
             </span>
           </div>
           <div className="w-36 text-right">
@@ -412,6 +504,15 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
           </div>
           {obligation.status === "ACTIVE" && (
             <div className="ml-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <button
+                data-testid="edit-rule-date"
+                onClick={() => onEditDate(rule)}
+                className="text-gray-400 hover:text-black"
+                title="Editar fecha de inicio"
+                aria-label="Editar fecha de inicio"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
               <button
                 onClick={() => handlePause(rule.id, rule.status)}
                 className="px-1 text-xs text-gray-400 hover:text-black"
@@ -468,10 +569,10 @@ function RulesBoard({ obligation, onReload }: { obligation: Obligation; onReload
             </div>
             <div className="flex flex-col gap-1">
               <Label className="text-xs font-bold uppercase">Recurrencia</Label>
-              <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as RecurrenceType)}>
+              <Select value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as ObligationRecurrence)}>
                 <SelectTrigger className="rounded-none border-2 border-black focus:ring-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {(Object.entries(RECURRENCE_TYPE_LABELS) as [RecurrenceType, string][]).map(([k, v]) => (
+                  {(Object.entries(OBLIGATION_RECURRENCE_LABELS) as [ObligationRecurrence, string][]).map(([k, v]) => (
                     <SelectItem key={k} value={k}>{v}</SelectItem>
                   ))}
                 </SelectContent>
@@ -583,7 +684,8 @@ function ManualPaymentDialog({
 export function ObligationDetail({ initialObligation }: { initialObligation: Obligation }) {
   const router = useRouter()
   const { reload } = useObligations()
-  const [obligation, setObligation] = useState(initialObligation)
+  // Viene del servidor: router.refresh() (refresh) lo vuelve a traer tras cada cambio
+  const obligation = initialObligation
   const [manualPaymentOpen, setManualPaymentOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -591,6 +693,7 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
   const [nameDraft, setNameDraft] = useState(obligation.name)
   const [editingDesc, setEditingDesc] = useState(false)
   const [descDraft, setDescDraft] = useState(obligation.description ?? "")
+  const [dateTarget, setDateTarget] = useState<StartDateTarget | null>(null)
   const [, startTransition] = useTransition()
 
   const refresh = () => {
@@ -659,6 +762,7 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
                 <Input
                   autoFocus
                   value={nameDraft}
+                  maxLength={NAME_MAX_LENGTH}
                   onChange={(e) => setNameDraft(e.target.value)}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") saveName()
@@ -740,6 +844,33 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
             </div>
           )}
 
+          {/* Primera cuota (editable) */}
+          {obligation.obligationType === "INSTALLMENT" && obligation.installments.length > 0 && (
+            <div>
+              <div className="mb-1 text-xs font-bold uppercase text-gray-500">Primera cuota</div>
+              <span className="flex items-center gap-1">
+                {formatObligationDate(obligation.installments[0].dueDate)}
+                {canEdit && (
+                  <button
+                    data-testid="edit-first-due-date"
+                    onClick={() =>
+                      setDateTarget({
+                        kind: "installments",
+                        title: "Editar fecha de la primera cuota",
+                        initial: obligation.installments[0].dueDate.slice(0, 10),
+                      })
+                    }
+                    className="text-gray-400 hover:text-black"
+                    title="Editar fecha"
+                    aria-label="Editar fecha de la primera cuota"
+                  >
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                )}
+              </span>
+            </div>
+          )}
+
           {/* Currency */}
           <div>
             <div className="mb-1 text-xs font-bold uppercase text-gray-500">Moneda</div>
@@ -802,12 +933,30 @@ export function ObligationDetail({ initialObligation }: { initialObligation: Obl
       {/* Rules board (RECURRING only) */}
       {obligation.obligationType === "RECURRING" && (
         <div className="mb-4">
-          <RulesBoard obligation={obligation} onReload={refresh} />
+          <RulesBoard
+            obligation={obligation}
+            onReload={refresh}
+            onEditDate={(rule) =>
+              setDateTarget({
+                kind: "rule",
+                ruleId: rule.id,
+                title: `Editar fecha — ${rule.name}`,
+                initial: rule.startDate.slice(0, 10),
+              })
+            }
+          />
         </div>
       )}
 
       {/* Payments/Installments board */}
       <PaymentsBoard obligation={obligation} onReload={refresh} />
+
+      <StartDateDialog
+        target={dateTarget}
+        obligationId={obligation.id}
+        onClose={() => setDateTarget(null)}
+        onDone={refresh}
+      />
 
       {/* Manual payment dialog (FIXED) */}
       <ManualPaymentDialog

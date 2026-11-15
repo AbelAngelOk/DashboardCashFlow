@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { currencies, defaultCurrency, type Currency } from "@/lib/finance"
+import { currencies, defaultCurrency, NAME_MAX_LENGTH, type Currency } from "@/lib/finance"
 import {
   ASSET_PRESETS,
   CAPABILITY_DESCRIPTIONS,
@@ -450,6 +450,7 @@ export function AssetFormDialog({
                 <Input
                   autoFocus
                   value={name}
+                  maxLength={NAME_MAX_LENGTH}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Ej: Departamento Palermo"
                   className={`border-2 focus-visible:ring-0 ${duplicateName ? "border-amber-500" : "border-black"}`}

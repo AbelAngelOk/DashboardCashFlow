@@ -1,7 +1,19 @@
 export type RecordType = "activo" | "pasivo" | "ingreso" | "gasto"
 export type Currency = "USD" | "EUR" | "MXN" | "ARS" | "USDT"
 
-export type RecordStatus = "ACTIVE" | "PENDING" | "CANCELLED" | "HISTORICAL" | "ARCHIVED"
+// Ciclo de lo que genera el corte (cuotas, pagos, cobros de reglas, dividendos):
+//   REVIEW    "Por revisar"            entra al dashboard, nadie lo miró todavía
+//   CONFIRMED "Pendiente" / "Por cobrar"  validado, falta pagarlo o cobrarlo
+//   ACTIVE    "Pagado" / "Cobrado"     ya se pagó o cobró
+export type RecordStatus =
+  | "ACTIVE" | "REVIEW" | "CONFIRMED" | "PENDING" | "CANCELLED" | "HISTORICAL" | "ARCHIVED"
+
+/** Estados de ingreso/gasto que forman parte del período en curso (el dashboard). */
+export const LIVE_FLOW_STATUSES: RecordStatus[] = ["ACTIVE", "REVIEW", "CONFIRMED"]
+/** De los anteriores, los que todavía no se pagaron ni cobraron. */
+export const UNSETTLED_FLOW_STATUSES: RecordStatus[] = ["REVIEW", "CONFIRMED"]
+
+export const NAME_MAX_LENGTH = 30
 
 export interface FinancialRecord {
   id: string
@@ -14,9 +26,42 @@ export interface FinancialRecord {
   assetType?: string
   isGroupParent?: boolean
   status?: RecordStatus
+  /** Activo que produce ingreso (negocio, renta): solo estos cuentan en la Libertad Financiera. */
+  generatesIncome?: boolean
+  /** Lo generó una obligación, una regla de ingreso o un dividendo (no se cargó a mano). */
+  generated?: boolean
+  /** Texto plano. En activos es de solo lectura: se edita con el editor rico del detalle. */
+  description?: string
   createdAt?: string
   effectiveDate?: string
   previousVersionId?: string
+}
+
+/**
+ * Las descripciones de activos se guardan como JSON de TipTap; el resto como
+ * texto. Devuelve siempre texto plano, o undefined si no hay nada que mostrar.
+ */
+export function plainTextDescription(raw: string | null | undefined): string | undefined {
+  if (!raw) return undefined
+  const text = raw.trim()
+  if (!text.startsWith("{")) return text || undefined
+  try {
+    const parts: string[] = []
+    const walk = (node: unknown) => {
+      if (!node || typeof node !== "object") return
+      const n = node as { type?: string; text?: string; content?: unknown[] }
+      if (typeof n.text === "string") parts.push(n.text)
+      if (Array.isArray(n.content)) {
+        n.content.forEach(walk)
+        if (n.type === "paragraph" || n.type === "heading" || n.type === "listItem") parts.push("\n")
+      }
+    }
+    walk(JSON.parse(text))
+    const result = parts.join("").replace(/\n{2,}/g, "\n").trim()
+    return result || undefined
+  } catch {
+    return text
+  }
 }
 
 export interface Snapshot {

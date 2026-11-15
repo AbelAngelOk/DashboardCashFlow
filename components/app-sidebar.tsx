@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation"
 import { useSession, signOut } from "next-auth/react"
 import {
   LayoutDashboard,
+  BarChart3,
   Camera,
   History,
   LogOut,
@@ -64,6 +65,7 @@ export function AppSidebar() {
       title: "Inicio",
       items: [
         { href: "/", label: "Dashboard", icon: LayoutDashboard },
+        { href: "/graficos", label: "Gráficos", icon: BarChart3 },
       ],
     },
     {

@@ -15,8 +15,8 @@ import {
   type InstallmentStatus,
   type PaymentStatus,
   type PaymentType,
-  type RecurrenceType,
-  OCCURRENCES_PER_YEAR,
+  type ObligationRecurrence,
+  OBLIGATION_OCCURRENCES_PER_YEAR,
   RECURRENCE_MONTHS,
   addMonths,
   ruleDatesInWindow,
@@ -44,7 +44,7 @@ function mapRule(r: {
     id: r.id,
     obligationId: r.obligationId,
     name: r.name,
-    recurrenceType: r.recurrenceType as RecurrenceType,
+    recurrenceType: r.recurrenceType as ObligationRecurrence,
     startDate: r.startDate.toISOString(),
     expectedAmount: typeof r.expectedAmount === "number" ? r.expectedAmount : r.expectedAmount.toNumber(),
     currency: r.currency as Currency,
@@ -118,6 +118,8 @@ function mapObligation(
     status: string
     nextDueDate: Date | null
     createdAt: Date
+    groupId?: string | null
+    group?: { name: string } | null
     rules: Parameters<typeof mapRule>[0][]
     installments: Parameters<typeof mapInstallment>[0][]
     payments: Parameters<typeof mapPayment>[0][]
@@ -125,6 +127,7 @@ function mapObligation(
   gastoAmounts: Map<string, number> = new Map(),
 ): Obligation {
   return {
+    ...(o.groupId ? { groupId: o.groupId, groupName: o.group?.name } : {}),
     id: o.id,
     userId: o.userId,
     obligationType: o.obligationType as ObligationType,
@@ -162,7 +165,7 @@ async function recalcularObligation(obligationId: string, userId: string): Promi
     const breakdown: Record<string, number> = {}
     for (const rule of o.rules) {
       if (rule.status !== "ACTIVE") continue
-      const perYear = rule.expectedAmount.toNumber() * OCCURRENCES_PER_YEAR[rule.recurrenceType as RecurrenceType]
+      const perYear = rule.expectedAmount.toNumber() * OBLIGATION_OCCURRENCES_PER_YEAR[rule.recurrenceType as ObligationRecurrence]
       breakdown[rule.currency] = (breakdown[rule.currency] ?? 0) + perYear
       if (rule.currency === o.currency) amount += perYear
     }
@@ -230,7 +233,7 @@ async function ensurePaymentWindow(
   )
 
   const pseudoRule = {
-    recurrenceType: rule.recurrenceType as RecurrenceType,
+    recurrenceType: rule.recurrenceType as ObligationRecurrence,
     startDate: rule.startDate.toISOString(),
   } as ObligationRule
 
@@ -291,6 +294,7 @@ export async function loadObligations(): Promise<Obligation[]> {
   const obligations = await prisma.obligation.findMany({
     where: { userId },
     include: {
+      group: { select: { name: true } },
       rules: { orderBy: { startDate: "asc" } },
       installments: { orderBy: { installmentNumber: "asc" } },
       payments: { orderBy: { expectedDate: "asc" } },
@@ -300,11 +304,53 @@ export async function loadObligations(): Promise<Obligation[]> {
   return obligations.map((o) => mapObligation(o))
 }
 
+// ── Grupos (solo visuales: agrupan en la lista y en el dashboard) ────────────
+
+export async function createObligationGroup(name: string, obligationIds: string[]): Promise<string> {
+  const userId = await getUserId()
+  if (!name.trim()) throw new Error("El grupo necesita un nombre")
+  const group = await prisma.group.create({
+    data: { userId, name: name.trim(), groupType: "LIABILITY" },
+  })
+  await prisma.obligation.updateMany({
+    where: { id: { in: obligationIds }, userId },
+    data: { groupId: group.id },
+  })
+  return group.id
+}
+
+export async function assignObligationsToGroup(groupId: string, obligationIds: string[]): Promise<void> {
+  const userId = await getUserId()
+  await prisma.group.findFirstOrThrow({ where: { id: groupId, userId, groupType: "LIABILITY" } })
+  await prisma.obligation.updateMany({
+    where: { id: { in: obligationIds }, userId },
+    data: { groupId },
+  })
+}
+
+/** Saca una obligación de su grupo; un grupo que queda vacío se borra. */
+export async function removeObligationFromGroup(obligationId: string): Promise<void> {
+  const userId = await getUserId()
+  const o = await prisma.obligation.findFirst({ where: { id: obligationId, userId }, select: { groupId: true } })
+  if (!o?.groupId) return
+  await prisma.obligation.update({ where: { id: obligationId }, data: { groupId: null } })
+  const left = await prisma.obligation.count({ where: { groupId: o.groupId, userId } })
+  if (left === 0) await prisma.group.delete({ where: { id: o.groupId, userId } })
+}
+
+/** Desagrupa: las obligaciones quedan sueltas y el grupo se borra. */
+export async function ungroupObligations(groupId: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.obligation.updateMany({ where: { groupId, userId }, data: { groupId: null } })
+  await prisma.group.deleteMany({ where: { id: groupId, userId, groupType: "LIABILITY" } })
+}
+
 export async function loadObligation(id: string): Promise<Obligation | null> {
   const userId = await getUserId()
   const o = await prisma.obligation.findFirst({
     where: { id, userId },
     include: {
+      group: { select: { name: true } },
       rules: { orderBy: { startDate: "asc" } },
       installments: { orderBy: { installmentNumber: "asc" } },
       payments: { orderBy: { createdAt: "desc" } },
@@ -422,7 +468,7 @@ export async function addObligationRule(
   obligationId: string,
   data: {
     name: string
-    recurrenceType: RecurrenceType
+    recurrenceType: ObligationRecurrence
     startDate: string
     expectedAmount: number
     currency: Currency
@@ -453,6 +499,102 @@ export async function addObligationRule(
 
   await recalcularObligation(obligationId, userId)
   return ruleId
+}
+
+/**
+ * Corrige la fecha de inicio de una regla y regenera sus pagos futuros.
+ * Solo se regeneran los pagos cuyo gasto todavía no entró al dashboard (PENDING):
+ * lo que el corte ya trajo, o ya se pagó, no se mueve debajo de los pies del usuario.
+ */
+export async function updateObligationRuleStartDate(
+  ruleId: string,
+  obligationId: string,
+  startDate: string,
+): Promise<void> {
+  const userId = await getUserId()
+  const rule = await prisma.obligationRule.findFirst({
+    where: { id: ruleId, obligationId, obligation: { userId } },
+  })
+  if (!rule) throw new Error("Regla no encontrada")
+  const newStart = new Date(startDate)
+  if (Number.isNaN(newStart.getTime())) throw new Error("Fecha inválida")
+
+  await prisma.obligationRule.update({ where: { id: ruleId }, data: { startDate: newStart } })
+
+  const pending = await prisma.obligationPayment.findMany({
+    where: { ruleId, obligationId, userId, status: "PENDING" },
+    select: { id: true, gastoRecordId: true },
+  })
+  const gastoIds = pending.map((p) => p.gastoRecordId).filter((v): v is string => !!v)
+  const stillPending = gastoIds.length
+    ? await prisma.record.findMany({
+        where: { id: { in: gastoIds }, userId, status: "PENDING" },
+        select: { id: true },
+      })
+    : []
+  const stillPendingSet = new Set(stillPending.map((g) => g.id))
+  const regenerable = pending.filter((p) => !p.gastoRecordId || stillPendingSet.has(p.gastoRecordId))
+
+  if (regenerable.length > 0) {
+    await prisma.obligationPayment.deleteMany({ where: { id: { in: regenerable.map((p) => p.id) } } })
+    const regenerableGastos = regenerable.map((p) => p.gastoRecordId).filter((v): v is string => !!v)
+    if (regenerableGastos.length > 0) {
+      await prisma.record.deleteMany({ where: { id: { in: regenerableGastos }, userId, status: "PENDING" } })
+    }
+  }
+
+  if (rule.status === "ACTIVE") {
+    await ensurePaymentWindow(obligationId, userId, ruleId, {
+      recurrenceType: rule.recurrenceType,
+      startDate: newStart,
+      expectedAmount: rule.expectedAmount.toNumber(),
+      currency: rule.currency,
+    })
+  }
+  await recalcularObligation(obligationId, userId)
+}
+
+/**
+ * Corrige la fecha de la primera cuota: las cuotas que todavía no entraron al
+ * dashboard se re-fechan (cuota N = primera + N-1 meses). Las pagadas y las que
+ * ya están en el dashboard conservan su fecha.
+ */
+export async function updateInstallmentsFirstDueDate(
+  obligationId: string,
+  firstDueDate: string,
+): Promise<void> {
+  const userId = await getUserId()
+  const obligation = await prisma.obligation.findFirst({
+    where: { id: obligationId, userId, obligationType: "INSTALLMENT" },
+    include: { installments: true },
+  })
+  if (!obligation) throw new Error("Obligación no encontrada")
+  const first = new Date(firstDueDate)
+  if (Number.isNaN(first.getTime())) throw new Error("Fecha inválida")
+
+  const open = obligation.installments.filter((i) => i.status === "PENDING" || i.status === "OVERDUE")
+  const gastoIds = open.map((i) => i.gastoRecordId).filter((v): v is string => !!v)
+  const stillPending = gastoIds.length
+    ? await prisma.record.findMany({
+        where: { id: { in: gastoIds }, userId, status: "PENDING" },
+        select: { id: true },
+      })
+    : []
+  const stillPendingSet = new Set(stillPending.map((g) => g.id))
+
+  const movable = open.filter((i) => !i.gastoRecordId || stillPendingSet.has(i.gastoRecordId))
+  await prisma.$transaction(
+    movable.flatMap((i) => {
+      const dueDate = addMonths(first, i.installmentNumber - 1)
+      return [
+        prisma.obligationInstallment.update({ where: { id: i.id }, data: { dueDate } }),
+        ...(i.gastoRecordId
+          ? [prisma.record.updateMany({ where: { id: i.gastoRecordId, userId }, data: { operationDate: dueDate } })]
+          : []),
+      ]
+    }),
+  )
+  await recalcularObligation(obligationId, userId)
 }
 
 export async function deleteObligationRule(ruleId: string, obligationId: string): Promise<void> {
@@ -486,9 +628,11 @@ export async function resumeObligationRule(ruleId: string, obligationId: string)
 
 // ── Payments — RECURRING ──────────────────────────────────────────────────────
 
+/** `actualAmount` = lo que realmente se pagó; si se omite, se paga lo esperado. */
 export async function acceptObligationPayment(
   paymentId: string,
   gastoName: string,
+  actualAmount?: number,
 ): Promise<string> {
   const userId = await getUserId()
   const payment = await prisma.obligationPayment.findFirst({
@@ -496,14 +640,14 @@ export async function acceptObligationPayment(
     include: { obligation: { select: { name: true } } },
   })
   if (!payment) throw new Error("Pago no encontrado")
+  const paidAmount = actualAmount ?? payment.expectedAmount?.toNumber() ?? 0
 
   let gastoId: string
 
   if (payment.gastoRecordId) {
-    // Activar el gasto PENDING ya existente
     await prisma.record.update({
       where: { id: payment.gastoRecordId, userId },
-      data: { name: gastoName, status: "ACTIVE" },
+      data: { name: gastoName, amount: paidAmount, status: "ACTIVE" },
     })
     gastoId = payment.gastoRecordId
   } else {
@@ -514,7 +658,7 @@ export async function acceptObligationPayment(
         id: gastoId,
         type: "gasto",
         name: gastoName,
-        amount: payment.expectedAmount ?? 0,
+        amount: paidAmount,
         currency: payment.currency,
         userId,
         status: "ACTIVE",
@@ -528,7 +672,7 @@ export async function acceptObligationPayment(
 
   await prisma.obligationPayment.update({
     where: { id: paymentId },
-    data: { status: "PAID" },
+    data: { status: "PAID", expectedAmount: paidAmount },
   })
 
   // Extend window if needed (ensure next 12 months are covered)
@@ -544,12 +688,11 @@ export async function acceptObligationPayment(
     }
   }
 
-  const gastoAmount = payment.expectedAmount?.toNumber() ?? 0
-  if (gastoAmount > 0) {
+  if (paidAmount > 0) {
     await createJournalEntry(userId, {
       description: `Pago obligación: ${gastoName}`,
       currency: payment.currency,
-      amount: gastoAmount,
+      amount: paidAmount,
       debitAccount: "gastos",
       creditAccount: "efectivo",
       sourceEntityId: gastoId,
@@ -586,9 +729,11 @@ export async function rejectObligationPayment(paymentId: string): Promise<void> 
 
 // ── Payments — INSTALLMENT ────────────────────────────────────────────────────
 
+/** `actualAmount` = lo que realmente se pagó; si se omite, se paga lo esperado. */
 export async function acceptInstallmentPayment(
   installmentId: string,
   gastoName: string,
+  actualAmount?: number,
 ): Promise<string> {
   const userId = await getUserId()
   const inst = await prisma.obligationInstallment.findFirst({
@@ -596,14 +741,14 @@ export async function acceptInstallmentPayment(
     include: { obligation: true },
   })
   if (!inst) throw new Error("Cuota no encontrada")
+  const paidAmount = actualAmount ?? inst.expectedAmount.toNumber()
 
   let gastoId: string
 
   if (inst.gastoRecordId) {
-    // Activar el gasto PENDING ya existente
     await prisma.record.update({
       where: { id: inst.gastoRecordId, userId },
-      data: { name: gastoName, status: "ACTIVE" },
+      data: { name: gastoName, amount: paidAmount, status: "ACTIVE" },
     })
     gastoId = inst.gastoRecordId
   } else {
@@ -614,7 +759,7 @@ export async function acceptInstallmentPayment(
         id: gastoId,
         type: "gasto",
         name: gastoName,
-        amount: inst.expectedAmount,
+        amount: paidAmount,
         currency: inst.obligation.currency,
         userId,
         status: "ACTIVE",
@@ -639,21 +784,18 @@ export async function acceptInstallmentPayment(
       userId,
       paymentType: "PAYMENT",
       expectedDate: inst.dueDate,
-      expectedAmount: inst.expectedAmount,
+      expectedAmount: paidAmount,
       currency: inst.obligation.currency,
       gastoRecordId: gastoId,
       status: "PAID",
     },
   })
 
-  const instAmount = typeof inst.expectedAmount === "number"
-    ? inst.expectedAmount
-    : (inst.expectedAmount as { toNumber: () => number }).toNumber()
-  if (instAmount > 0) {
+  if (paidAmount > 0) {
     await createJournalEntry(userId, {
       description: `Cuota pagada: ${gastoName}`,
       currency: inst.obligation.currency,
-      amount: instAmount,
+      amount: paidAmount,
       debitAccount: "gastos",
       creditAccount: "efectivo",
       sourceEntityId: gastoId,
@@ -677,10 +819,61 @@ export async function rejectInstallmentPayment(installmentId: string): Promise<v
     data: { status: "REJECTED" },
   })
 
+  // Igual que rejectObligationPayment: el gasto vinculado deja el dashboard
+  if (inst.gastoRecordId) {
+    await prisma.record.updateMany({
+      where: { id: inst.gastoRecordId, userId, status: { in: ["PENDING", "REVIEW", "CONFIRMED"] } },
+      data: { status: "CANCELLED" },
+    })
+  }
+
   await recalcularObligation(inst.obligationId, userId)
 }
 
 // ── Payments — FIXED (manual) ─────────────────────────────────────────────────
+
+/**
+ * El monto de un gasto generado por una obligación se editó en el dashboard.
+ * Pendiente: el esperado pasa a ser el nuevo (pagar desde el detalle o desde el
+ * dashboard da lo mismo). Ya pagado: se corrige el pago y se asienta la diferencia.
+ */
+export async function syncGastoAmount(gastoId: string, newAmount: number): Promise<void> {
+  const userId = await getUserId()
+
+  const inst = await prisma.obligationInstallment.findFirst({
+    where: { gastoRecordId: gastoId, obligation: { userId } },
+    select: { id: true, obligationId: true, status: true },
+  })
+  const payment = await prisma.obligationPayment.findFirst({
+    where: { gastoRecordId: gastoId, userId },
+    select: { id: true, obligationId: true, status: true, expectedAmount: true, currency: true },
+  })
+  const obligationId = inst?.obligationId ?? payment?.obligationId
+  if (!obligationId) return
+
+  if (inst && (inst.status === "PENDING" || inst.status === "OVERDUE")) {
+    await prisma.obligationInstallment.update({ where: { id: inst.id }, data: { expectedAmount: newAmount } })
+  } else if (payment?.status === "PENDING") {
+    await prisma.obligationPayment.update({ where: { id: payment.id }, data: { expectedAmount: newAmount } })
+  } else if (payment?.status === "PAID") {
+    const delta = newAmount - (payment.expectedAmount?.toNumber() ?? 0)
+    if (Math.abs(delta) < 0.0001) return
+    await prisma.obligationPayment.update({ where: { id: payment.id }, data: { expectedAmount: newAmount } })
+    await createJournalEntry(userId, {
+      description: "Ajuste de pago de obligación (monto editado)",
+      currency: payment.currency,
+      amount: Math.abs(delta),
+      debitAccount: delta > 0 ? "gastos" : "efectivo",
+      creditAccount: delta > 0 ? "efectivo" : "gastos",
+      sourceEntityId: gastoId,
+      reference: payment.id,
+    })
+  } else {
+    return
+  }
+
+  await recalcularObligation(obligationId, userId)
+}
 
 export async function registerManualPayment(
   obligationId: string,

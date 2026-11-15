@@ -6,14 +6,19 @@ import { hash } from "bcryptjs"
 import { authOptions } from "./auth"
 import { prisma } from "./db"
 import { getAccountBalances } from "./journal-actions"
+import { extractBoards } from "./assets"
+import { syncGastoAmount } from "./obligation-actions"
+import { syncIngresoAmount } from "./income-actions"
 import { checkRateLimit, clientIpFrom } from "./rate-limit"
-import type {
-  Currency,
-  FinancialRecord,
-  Movement,
-  MovementAction,
-  RecordType,
-  Snapshot,
+import {
+  plainTextDescription,
+  type Currency,
+  type FinancialRecord,
+  type Movement,
+  type MovementAction,
+  type RecordStatus,
+  type RecordType,
+  type Snapshot,
 } from "./finance"
 
 // ── Auth helper ─────────────────────────────────────────────────────────────
@@ -78,12 +83,11 @@ export async function loadFinanceCore(): Promise<{
       where: {
         userId,
         deletedAt: null,
-        // Gastos PENDING son internos del módulo Obligaciones; no aparecen en dashboard
-        // ingresos/gastos HISTORICAL y ARCHIVED se excluyen del dashboard
+        // PENDING = pre-generados que todavía no entraron al período; HISTORICAL y
+        // ARCHIVED ya salieron. El dashboard muestra ACTIVE, REVIEW y CONFIRMED.
         OR: [
           { type: { not: { in: ["gasto", "ingreso"] } } },
-          { type: "gasto", status: "ACTIVE" },
-          { type: "ingreso", status: "ACTIVE" },
+          { type: { in: ["gasto", "ingreso"] }, status: { in: ["ACTIVE", "REVIEW", "CONFIRMED"] } },
         ],
       },
       include: { _count: { select: { children: true } } },
@@ -94,6 +98,26 @@ export async function loadFinanceCore(): Promise<{
       orderBy: { createdAt: "desc" },
     }),
   ])
+
+  // Registros que no se cargaron a mano: sirven para rotular "Pagado" / "Cobrado"
+  const flowIds = dbRecords.filter((r) => r.type === "gasto" || r.type === "ingreso").map((r) => r.id)
+  const generatedIds = new Set<string>()
+  if (flowIds.length > 0) {
+    const [inst, pays, occs] = await Promise.all([
+      prisma.obligationInstallment.findMany({ where: { gastoRecordId: { in: flowIds } }, select: { gastoRecordId: true } }),
+      prisma.obligationPayment.findMany({ where: { userId, gastoRecordId: { in: flowIds } }, select: { gastoRecordId: true } }),
+      prisma.incomeOccurrence.findMany({ where: { userId, ingresoRecordId: { in: flowIds } }, select: { ingresoRecordId: true } }),
+    ])
+    for (const i of inst) if (i.gastoRecordId) generatedIds.add(i.gastoRecordId)
+    for (const p of pays) if (p.gastoRecordId) generatedIds.add(p.gastoRecordId)
+    for (const o of occs) if (o.ingresoRecordId) generatedIds.add(o.ingresoRecordId)
+    for (const a of dbRecords) {
+      if (a.type !== "activo" || !a.metadata) continue
+      for (const b of extractBoards(a.metadata as Record<string, unknown>)) {
+        for (const d of b.dividends ?? []) if (d.ingresoRecordId) generatedIds.add(d.ingresoRecordId)
+      }
+    }
+  }
 
   return {
     records: dbRecords.map((r) => ({
@@ -106,6 +130,10 @@ export async function loadFinanceCore(): Promise<{
       ...(r.parentId ? { parentId: r.parentId } : {}),
       ...(r.assetType ? { assetType: r.assetType } : {}),
       ...("_count" in r && r._count.children > 0 ? { isGroupParent: true } : {}),
+      status: r.status as RecordStatus,
+      ...(generatedIds.has(r.id) ? { generated: true } : {}),
+      ...(r.type === "activo" && r.generatesIncome ? { generatesIncome: true } : {}),
+      ...(plainTextDescription(r.description) ? { description: plainTextDescription(r.description) } : {}),
     })),
     snapshots: dbSnapshots.map((s) => ({
       id: s.id,
@@ -162,6 +190,7 @@ export async function dbCreateRecord(
         linkedTo: record.linkedTo ?? null,
         parentId: record.parentId ?? null,
         assetType: record.assetType ?? null,
+        description: record.description?.trim() || null,
         userId,
         status: "ACTIVE",
       },
@@ -187,6 +216,11 @@ export async function dbEditRecord(
   movement: Movement,
 ) {
   const userId = await getUserId()
+  const before = await prisma.record.findFirst({
+    where: { id: record.id, userId },
+    select: { amount: true },
+  })
+
   await prisma.$transaction([
     prisma.record.update({
       where: { id: record.id, userId },
@@ -198,6 +232,11 @@ export async function dbEditRecord(
         linkedTo: record.linkedTo ?? null,
         parentId: record.parentId ?? null,
         assetType: record.assetType ?? null,
+        // La descripción de un activo es JSON del editor rico: acá solo llega
+        // su texto plano, así que nunca se escribe desde este camino.
+        ...(record.type !== "activo" && record.description !== undefined
+          ? { description: record.description.trim() || null }
+          : {}),
       },
     }),
     prisma.auditLog.create({
@@ -214,6 +253,21 @@ export async function dbEditRecord(
       },
     }),
   ])
+
+  // Un ingreso/gasto generado por una regla u obligación lleva el monto a su origen
+  if (before && Number(before.amount) !== record.amount) {
+    if (record.type === "ingreso") await syncIngresoAmount(record.id, record.amount)
+    if (record.type === "gasto") await syncGastoAmount(record.id, record.amount)
+  }
+}
+
+/** Descripción de texto de un ingreso, gasto o pasivo (los activos usan su editor rico). */
+export async function setRecordDescription(recordId: string, description: string): Promise<void> {
+  const userId = await getUserId()
+  await prisma.record.updateMany({
+    where: { id: recordId, userId, type: { in: ["ingreso", "gasto", "pasivo"] } },
+    data: { description: description.trim() || null },
+  })
 }
 
 export async function dbDeleteRecord(

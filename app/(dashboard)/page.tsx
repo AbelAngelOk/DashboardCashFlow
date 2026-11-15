@@ -21,9 +21,11 @@ import { ObligationFormDialog } from "@/components/obligations/obligation-form-d
 import { AssetFormDialog } from "@/components/activos/asset-form-dialog"
 import { CutoffBanner } from "@/components/cutoff/cutoff-banner"
 import { OnboardingCard } from "@/components/onboarding-card"
-import { addMovement, zeroOutAsset, createExtractFromDashboard } from "@/lib/assets-actions"
+import { addMovement, zeroOutAsset, createExtractFromDashboard, createAsset } from "@/lib/assets-actions"
 import { loadGastoGroups, loadIngresoGroups, type FlowGroupWithMembers } from "@/lib/flow-group-actions"
-import type { FinancialRecord } from "@/lib/finance"
+import { confirmReviewRecord, validateReviewRecord } from "@/lib/review-actions"
+import { toast } from "@/components/ui/use-toast"
+import type { Currency, FinancialRecord } from "@/lib/finance"
 import type { DashboardMovementType } from "@/components/dashboard-sheet"
 
 export default function DashboardPage() {
@@ -50,6 +52,39 @@ export default function DashboardPage() {
     Promise.all([loadGastoGroups(), loadIngresoGroups()])
       .then(([g, i]) => { setGastoGroups(g); setIngresoGroups(i) })
       .catch(console.error)
+  }
+
+  const handleConfirmReview = async (record: FinancialRecord, amount: number) => {
+    try {
+      await confirmReviewRecord(record.id, amount)
+      await reload()
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: record.type === "gasto" ? "No se pudo registrar el pago" : "No se pudo registrar el cobro",
+        description: e instanceof Error ? e.message : "Error desconocido",
+      })
+      throw e
+    }
+  }
+
+  const handleValidateReview = async (record: FinancialRecord) => {
+    try {
+      await validateReviewRecord(record.id)
+      await reload()
+    } catch (e) {
+      toast({
+        variant: "destructive",
+        title: "No se pudo confirmar",
+        description: e instanceof Error ? e.message : "Error desconocido",
+      })
+    }
+  }
+
+  const handleCreateLinkedAsset = async (name: string, currency: Currency) => {
+    const id = await createAsset({ name, amount: 0, currency, skipInitialMovement: true })
+    await reload()
+    return id
   }
 
   const handleGroupAdjust = (record: FinancialRecord, previous: FinancialRecord) => {
@@ -174,6 +209,9 @@ export default function DashboardPage() {
         onEditAmountWithComment={(r, p, c, t, g, i) => handleActivoEditAmount(r, p, c, t, g, i)}
         onAddObligation={() => setObligationFormOpen(true)}
         onAddAsset={() => setAssetFormOpen(true)}
+        onConfirmReview={handleConfirmReview}
+        onValidateReview={handleValidateReview}
+        onCreateLinkedAsset={handleCreateLinkedAsset}
       />
 
       <ObligationFormDialog
